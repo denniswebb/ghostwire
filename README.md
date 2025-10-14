@@ -12,8 +12,8 @@ Invisible in-cluster traffic switcher for Blue/Green & Canary rollouts.
 - All the knobs you’ll ask for later are here now.
 
 ## Components
-- **`init`**: automatically discovers all Services in the namespace via the Kubernetes API, identifies base/preview pairs (e.g., `orders` + `orders-preview`), and prepares DNAT mappings for all ports. No explicit service list needed. (Note: iptables rule building will be added in a subsequent phase.)
-- **`watcher`**: polls its own Pod labels and toggles a single jump into that chain when the pod’s role becomes preview.
+- **`init`**: automatically discovers all Services in the namespace via the Kubernetes API, identifies base/preview pairs (e.g., `orders` + `orders-preview`), creates a custom DNAT chain (default: `CANARY_DNAT`), adds exclusion rules for IMDS and DNS, builds DNAT rules mapping active ClusterIP:port → preview ClusterIP:port for all discovered services, and writes `/shared/dnat.map` for audit. Does **not** activate routing—that's the watcher’s job.
+- **`watcher`**: long-running sidecar that polls its own Pod's labels at a configurable interval (default 2s), detects role transitions between active and preview states, and logs state changes. Handles graceful shutdown via SIGTERM/SIGINT. (Note: iptables jump management and health/metrics endpoints will be added in the subsequent phase.)
 - **`injector`**: mutating admission webhook that injects the init and watcher based on annotations. Optional, but saves your wrists.
 
 Language: **Go**. Single static binaries. Tiny images. Fewer surprises.
@@ -29,6 +29,8 @@ Install [mise](https://mise.jdx.dev) to manage the toolchain defined in `.mise.t
 **Local Testing:** Use [`act`](https://github.com/nektos/act) to exercise workflows before pushing. Install with `brew install act` on macOS (see upstream docs for other platforms), then run `act pull_request` for the full pipeline or target specific jobs such as `act -j test`. Defaults live in `.actrc`, including artifact storage under `.artifacts/`.
 
 **Pre-commit Checklist:** Before opening a PR, run `mise run fmt`, `mise run vet`, `mise run test`, and optionally `act pull_request` to catch CI failures early.
+
+**Integration Testing:** Local integration tests use [KIND](https://kind.sigs.k8s.io/) to validate the init command against real Kubernetes Services. The `/test/kind/` directory contains cluster setup scripts, sample manifests, and validation helpers. Typical flow: `./test/kind/setup-cluster.sh`, `./test/kind/load-image.sh`, `./test/kind/deploy-test.sh`, followed by the validation scripts under `/test/kind/`. See `/test/kind/README.md` for detailed instructions. Integration runs are optional for most PRs but recommended when touching service discovery or iptables logic.
 
 **Multi-Architecture Support:** Container images are built for `linux/amd64` and `linux/arm64`, providing coverage for Intel/AMD servers, AWS Graviton nodes, and Apple Silicon-based Kubernetes clusters.
 
@@ -83,12 +85,37 @@ metadata:
 | `GW_PREVIEW_SUFFIX` | `-preview` | Preview suffix paired with `GW_ACTIVE_SUFFIX` matches |
 | `GW_DNS_SUFFIX` | `.svc.cluster.local` | Cluster DNS suffix |
 | `GW_NAT_CHAIN` | `CANARY_DNAT` | iptables chain name |
+| `GW_IPTABLES_DNAT_MAP` | `/shared/dnat.map` | Path where `ghostwire init` writes the DNAT map artefact |
 | `GW_JUMP_HOOK` | `OUTPUT` | `OUTPUT` or `PREROUTING` |
 | `GW_EXCLUDE_CIDRS` | IMDS, DNS | CSV of CIDRs to skip |
 | `GW_POLL_INTERVAL` | `2s` | Watcher poll cadence |
 | `GW_REFRESH_INTERVAL` | empty | If set, periodic rebuild of DNAT |
 | `GW_IPV6` | `false` | Add ip6tables rules |
 | `GW_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+
+---
+
+### NAT Chain Configuration Examples
+
+- **Custom chain name**: keep the watcher jump stable while testing alternate rule sets.
+  ```sh
+  export GW_NAT_CHAIN="CANARY_DNAT_V2"
+  ghostwire init
+  ```
+- **Additional exclusions**: skip corporate CIDRs alongside the built-in IMDS/DNS ranges.
+  ```sh
+  export GW_EXCLUDE_CIDRS="169.254.169.254/32,10.3.0.0/16"
+  ghostwire init
+  ```
+- **Dual-stack clusters**: enable ip6tables rules when preview/endpoints use IPv6 addresses.
+  ```sh
+  export GW_IPV6="true"
+  ghostwire init
+  ```
+
+> `ghostwire init` issues iptables commands with `-w 5`, telling the kernel to wait up to five seconds for xtables locks. Concurrent init pods will serialize on the kernel lock instead of racing each other; if contention persists past the timeout, the command fails and surfaces in logs.
+
+> Mount the `/shared` volume (where `GW_IPTABLES_DNAT_MAP` lives) with permissions that prevent peer containers from writing to the file. The default `emptyDir` mode is `0777`; tighten it to match your security posture if multiple containers share the volume.
 
 ---
 
@@ -121,6 +148,7 @@ That’s it. No app changes. No service mesh hand-holding.
 - Pods need `NET_ADMIN` to program iptables. Yes, that’s spicy. Scope the ServiceAccount per workload and bind only `get` on its own Pod:
   - Role: `resources: ["pods"], verbs: ["get"]`
   - Optionally template `resourceNames: ["$(POD_NAME)"]`
+- Watcher sidecar needs RBAC permissions: `resources: ["pods"], verbs: ["get"]` to read its own pod labels. For enhanced security, scope the Role with `resourceNames: ["$(POD_NAME)"]` to restrict access to only the watcher's pod.
 - Init container needs RBAC permissions to list Services in its namespace (`resources: ["services"], verbs: ["list"]`).
 - Injector runs with minimal RBAC, mutating only annotated workloads.
 - Exclude CIDRs for IMDS, DNS, or anything else you shouldn’t mangle.
@@ -138,9 +166,7 @@ That’s it. No app changes. No service mesh hand-holding.
 ## Injector Behavior (what actually gets added)
 
 - An **initContainer** that:
-  - Resolves `<svcActive>` and `<svcPreview>` FQDNs and builds DNAT rules only when the preview ClusterIP is distinct.
-  - Writes a small `/shared/dnat.map` for audit/debug.
-  - Exits without enabling the chain.
+  - Discovers services, builds DNAT rules with exclusions, writes `/shared/dnat.map` for audit/debug, and exits without enabling the chain (watcher activates it).
 - A **watcher sidecar** that:
   - Polls the Pod’s `role` label.
   - Adds or removes a single `-j CANARY_DNAT` jump in `OUTPUT` (or `PREROUTING`) accordingly.

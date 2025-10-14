@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ghostwire-init-test
+  namespace: ghostwire-test
+  labels:
+    app: ghostwire
+    component: init
+spec:
+  serviceAccountName: ghostwire-init
+  securityContext:
+    runAsNonRoot: false
+    supplementalGroups: []
+  initContainers:
+    - name: ghostwire-init
+      image: ghostwire:local # Build and load via ./test/kind/load-image.sh
+      imagePullPolicy: IfNotPresent
+      command: ["ghostwire", "init"]
+      env:
+        - name: GW_NAMESPACE
+          value: ghostwire-test
+        - name: GW_SVC_PREVIEW_PATTERN
+          value: "{{name}}-preview"
+        - name: GW_LOG_LEVEL
+          value: debug
+        - name: GW_IPTABLES_DNAT_MAP
+          value: /shared/dnat.map
+      securityContext:
+        capabilities:
+          add: ["NET_ADMIN"]
+      volumeMounts:
+        - name: shared
+          mountPath: /shared
+  containers:
+    - name: debug
+      image: busybox:1.36
+      imagePullPolicy: IfNotPresent
+      command: ["sh", "-c", "sleep 3600"]
+      securityContext:
+        capabilities:
+          add: ["NET_ADMIN"]
+      volumeMounts:
+        - name: shared
+          mountPath: /shared
+  volumes:
+    - name: shared
+      emptyDir: {}
+# After running the pod:
+#   kubectl logs -n ghostwire-test ghostwire-init-test -c ghostwire-init
+#   kubectl exec -n ghostwire-test ghostwire-init-test -c debug -- cat /shared/dnat.map

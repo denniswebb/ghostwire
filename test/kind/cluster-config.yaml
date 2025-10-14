@@ -1,0 +1,17 @@
+# KIND cluster configuration for ghostwire integration testing.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+
+# Single control-plane node is sufficient for validation scenarios.
+nodes:
+  - role: control-plane
+    # Expose the watcher metrics endpoint so it can be scraped from the host.
+    extraPortMappings:
+      - containerPort: 8081
+        hostPort: 8081
+        listenAddress: "127.0.0.1"
+        protocol: TCP
+
+# Rely on the default CNI (kindnet) and standard service/pod CIDRs.
+networking:
+  disableDefaultCNI: false

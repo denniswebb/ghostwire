@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ghostwire-test
+  labels:
+    app: ghostwire
+    purpose: integration-testing
+---
+# Apply this namespace before other manifests:
+#   kubectl apply -f namespace.yaml

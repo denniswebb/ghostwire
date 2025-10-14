@@ -3,15 +3,14 @@ experimental = true
 
 [tools]
 go = "1.24.9"
-"go:github.com/golangci/golangci-lint/cmd/golangci-lint" = "v1.62.0"
 
 [tasks.build]
 description = "Compile the ghostwire binary"
-run = "go build -o ghostwire ./cmd/ghostwire"
+run = "GOCACHE=$(pwd)/.cache/go-build go build -o ghostwire ./cmd/ghostwire"
 
 [tasks.test]
 description = "Run unit tests"
-run = "go test ./..."
+run = "GOCACHE=$(pwd)/.cache/go-build go test ./..."
 
 [tasks.clean]
 description = "Remove build artifacts"
@@ -19,15 +18,15 @@ run = "rm -f ghostwire"
 
 [tasks.fmt]
 description = "Format Go code"
-run = "go fmt ./..."
+run = "GOCACHE=$(pwd)/.cache/go-build go fmt ./..."
 
 [tasks.vet]
 description = "Run go vet for static analysis"
-run = "go vet ./..."
+run = "GOCACHE=$(pwd)/.cache/go-build go vet ./..."
 
 [tasks.lint]
 description = "Run golangci-lint"
-run = "golangci-lint run ./..."
+run = "mkdir -p $(pwd)/.cache/golangci-lint && XDG_CACHE_HOME=$(pwd)/.cache GOCACHE=$(pwd)/.cache/go-build GOLANGCI_LINT_CACHE=$(pwd)/.cache/golangci-lint golangci-lint run ./..."
 
 [tasks.help]
 description = "List available mise tasks"

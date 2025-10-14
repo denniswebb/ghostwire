@@ -2,14 +2,18 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
 	"github.com/denniswebb/ghostwire/internal/discovery"
+	"github.com/denniswebb/ghostwire/internal/iptables"
 	"github.com/denniswebb/ghostwire/internal/logging"
 )
 
@@ -75,7 +79,60 @@ var InitCmd = &cobra.Command{
 			slog.String("namespace", namespace),
 		)
 
-		// TODO(ghostwire/iptables): Build DNAT rules from discovered mappings.
+		chainName := strings.TrimSpace(viper.GetString("nat-chain"))
+		excludeList := viper.GetString("exclude-cidrs")
+		ipv6Enabled := viper.GetBool("ipv6")
+
+		excludeCIDRs, err := parseExcludeCIDRs(excludeList)
+		if err != nil {
+			logger.Error("invalid exclude CIDRs", slog.String("value", excludeList), slog.String("error", err.Error()))
+			return err
+		}
+
+		dnatMapPath := strings.TrimSpace(viper.GetString("iptables-dnat-map"))
+		if dnatMapPath == "" {
+			dnatMapPath = "/shared/dnat.map"
+		}
+
+		iptablesCfg := iptables.Config{
+			ChainName:    chainName,
+			ExcludeCIDRs: excludeCIDRs,
+			IPv6:         ipv6Enabled,
+			DnatMapPath:  dnatMapPath,
+		}
+
+		if err := iptables.Setup(ctx, iptablesCfg, mappings, logger); err != nil {
+			logger.Error("iptables setup failed", slog.String("error", err.Error()))
+			return err
+		}
+
+		logger.Info(
+			"iptables chain prepared",
+			slog.String("chain", chainName),
+			slog.Int("dnat_rules", len(mappings)),
+		)
+
 		return nil
 	},
+}
+
+func parseExcludeCIDRs(csv string) ([]string, error) {
+	if strings.TrimSpace(csv) == "" {
+		return nil, nil
+	}
+
+	var result []string
+	for _, part := range strings.Split(csv, ",") {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+
+		if _, _, err := net.ParseCIDR(trimmed); err != nil {
+			return nil, fmt.Errorf("parse exclude cidr %q: %w", trimmed, err)
+		}
+		result = append(result, trimmed)
+	}
+
+	return result, nil
 }
