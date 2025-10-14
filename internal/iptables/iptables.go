@@ -9,6 +9,8 @@ import (
 	"github.com/denniswebb/ghostwire/internal/discovery"
 )
 
+var executorFactory = NewExecutor
+
 // Setup orchestrates chain preparation, exclusion insertion, DNAT rules, and audit output.
 func Setup(ctx context.Context, cfg Config, mappings []discovery.ServiceMapping, logger *slog.Logger) error {
 	if logger == nil {
@@ -19,7 +21,7 @@ func Setup(ctx context.Context, cfg Config, mappings []discovery.ServiceMapping,
 		return err
 	}
 
-	executor := NewExecutor()
+	executor := executorFactory()
 
 	if strings.TrimSpace(cfg.ChainName) == "" {
 		return fmt.Errorf("nat chain name cannot be empty; set GW_NAT_CHAIN or use default CANARY_DNAT")

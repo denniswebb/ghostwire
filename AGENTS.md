@@ -65,6 +65,8 @@
 - Always run `mise run test` yourself before handing work back—never defer this command to the user—and run `act pull_request` when you need to mirror CI locally.
 - When new dependencies are added, finish by running `go mod tidy` (through the mise-managed toolchain) so `go.sum` stays accurate.
 
+Unit tests follow table-driven patterns with `t.Parallel()` for concurrency. The discovery package exercises service pairing logic against a fake Kubernetes clientset, and the iptables package relies on the `recordingExecutor` mock to validate command sequencing without touching the host firewall. Integration testing uses KIND clusters (see `/test/kind/`) with sample Service manifests and validation scripts. Before opening a PR, run unit tests (`mise run test`), optionally run `act pull_request` for CI rehearsal, and consider the KIND flow when changes affect service discovery or iptables logic. `/test/kind/README.md` documents the full integration workflow.
+
 ## Observability & Error Handling
 - Use the provided slog-based logger; do not introduce alternative logging frameworks.
 - Map errors to actionable log fields; lean on `fmt.Errorf("...: %w", err)` for wrapping.

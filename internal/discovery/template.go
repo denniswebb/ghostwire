@@ -3,6 +3,7 @@ package discovery
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"text/template"
@@ -43,12 +44,16 @@ func DerivePreviewName(name, activeSuffix, previewSuffix, pattern string) (strin
 	return ApplyPattern(pattern, name)
 }
 
+var namePlaceholder = regexp.MustCompile(`{{\s*name\s*}}`)
+
 func loadTemplate(pattern string) (*template.Template, error) {
 	if tpl, ok := templateCache.Load(pattern); ok {
 		return tpl.(*template.Template), nil
 	}
 
-	tpl, err := template.New("svc_preview_pattern").Parse(pattern)
+	normalized := namePlaceholder.ReplaceAllString(pattern, "{{.Name}}")
+
+	tpl, err := template.New("svc_preview_pattern").Parse(normalized)
 	if err != nil {
 		return nil, fmt.Errorf("parse preview pattern %q: %w", pattern, err)
 	}

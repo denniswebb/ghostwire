@@ -30,6 +30,8 @@ Install [mise](https://mise.jdx.dev) to manage the toolchain defined in `.mise.t
 
 **Pre-commit Checklist:** Before opening a PR, run `mise run fmt`, `mise run vet`, `mise run test`, and optionally `act pull_request` to catch CI failures early.
 
+**Integration Testing:** Local integration tests use [KIND](https://kind.sigs.k8s.io/) to validate the init command against real Kubernetes Services. The `/test/kind/` directory contains cluster setup scripts, sample manifests, and validation helpers. Typical flow: `./test/kind/setup-cluster.sh`, `./test/kind/load-image.sh`, `./test/kind/deploy-test.sh`, followed by the validation scripts under `/test/kind/`. See `/test/kind/README.md` for detailed instructions. Integration runs are optional for most PRs but recommended when touching service discovery or iptables logic.
+
 **Multi-Architecture Support:** Container images are built for `linux/amd64` and `linux/arm64`, providing coverage for Intel/AMD servers, AWS Graviton nodes, and Apple Silicon-based Kubernetes clusters.
 
 ---
