@@ -61,7 +61,7 @@ func (r *RealExecutor) Run(ctx context.Context, command string, args ...string) 
 }
 
 func chainExists(ctx context.Context, binary string, table string, chain string) (bool, error) {
-	cmd := exec.CommandContext(ctx, binary, "-w", "5", "-t", table, "-L", chain)
+	cmd := exec.CommandContext(ctx, binary, "-w", iptablesWaitSeconds, "-t", table, "-L", chain)
 	output, err := cmd.CombinedOutput()
 	if err == nil {
 		return true, nil
@@ -74,7 +74,7 @@ func chainExists(ctx context.Context, binary string, table string, chain string)
 		}
 		return false, &CommandError{
 			Command: binary,
-			Args:    []string{"-w", "5", "-t", table, "-L", chain},
+			Args:    []string{"-w", iptablesWaitSeconds, "-t", table, "-L", chain},
 			Output:  string(output),
 			Err:     err,
 		}

@@ -5,12 +5,21 @@ CLUSTER_NAME="${KIND_CLUSTER_NAME:-ghostwire-test}"
 KUBE_CONTEXT="kind-${CLUSTER_NAME}"
 NAMESPACE="ghostwire-test"
 POD_NAME="${GHOSTWIRE_INIT_POD:-ghostwire-init-test}"
+TMP_FILE=""
+
+cleanup() {
+	if [[ -n "${TMP_FILE}" && -f "${TMP_FILE}" ]]; then
+		rm -f "${TMP_FILE}"
+	fi
+}
+
+trap cleanup EXIT
 
 require_binary() {
 	if ! command -v "$1" >/dev/null 2>&1; then
 		echo "error: required command '$1' not found in PATH" >&2
 		exit 1
-	}
+	fi
 }
 
 require_binary kubectl
@@ -22,21 +31,31 @@ if [[ -z "${PHASE}" ]]; then
 	exit 1
 fi
 
-if [[ "${PHASE}" != "Succeeded" && "${PHASE}" != "Running" ]]; then
-	echo "error: pod ${POD_NAME} is in phase '${PHASE}'. Ensure the init job completed successfully." >&2
+if [[ "${PHASE}" != "Running" && "${PHASE}" != "Succeeded" ]]; then
+	echo "error: pod ${POD_NAME} is in phase '${PHASE}'. Ensure the init workflow completed successfully." >&2
 	exit 1
 fi
 
-TMP_FILE="$(mktemp)"
-trap 'rm -f "${TMP_FILE}"' EXIT
-
-echo "Copying /shared/dnat.map from pod..."
-if ! kubectl --context "${KUBE_CONTEXT}" cp "${NAMESPACE}/${POD_NAME}:/shared/dnat.map" "${TMP_FILE}" >/dev/null 2>&1; then
-	echo "error: failed to copy dnat.map. If the pod has already terminated, rerun ./test/kind/deploy-test.sh --with-pod to recreate it." >&2
-	exit 1
+if [[ "${PHASE}" == "Running" ]]; then
+	echo "Reading /shared/dnat.map via exec..."
+	if ! MAP_CONTENT=$(kubectl --context "${KUBE_CONTEXT}" exec -n "${NAMESPACE}" "${POD_NAME}" -c debug -- cat /shared/dnat.map 2>/dev/null); then
+		echo "kubectl exec failed; attempting fallback via kubectl cp..."
+		TMP_FILE="$(mktemp)"
+		if ! kubectl --context "${KUBE_CONTEXT}" cp "${NAMESPACE}/${POD_NAME}:/shared/dnat.map" "${TMP_FILE}" >/dev/null 2>&1; then
+			echo "error: unable to retrieve dnat.map via exec or cp" >&2
+			exit 1
+		fi
+		MAP_CONTENT=$(cat "${TMP_FILE}")
+	fi
+else
+	echo "Pod phase '${PHASE}' detected; retrieving /shared/dnat.map via kubectl cp..."
+	TMP_FILE="$(mktemp)"
+	if ! kubectl --context "${KUBE_CONTEXT}" cp "${NAMESPACE}/${POD_NAME}:/shared/dnat.map" "${TMP_FILE}" >/dev/null 2>&1; then
+		echo "error: unable to retrieve dnat.map from completed pod" >&2
+		exit 1
+	fi
+	MAP_CONTENT=$(cat "${TMP_FILE}")
 fi
-
-MAP_CONTENT=$(cat "${TMP_FILE}")
 echo "dnat.map contents:"
 echo "------------------"
 echo "${MAP_CONTENT}"

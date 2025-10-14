@@ -25,7 +25,7 @@ require_binary() {
 	if ! command -v "$1" >/dev/null 2>&1; then
 		echo "error: required command '$1' not found in PATH" >&2
 		exit 1
-	}
+	fi
 }
 
 cluster_exists() {
@@ -53,9 +53,15 @@ kubectl --context "${KUBE_CONTEXT}" get all -n ghostwire-test
 if [[ "${WITH_POD}" == "true" ]]; then
 	echo "Deploying ghostwire init test pod..."
 	kubectl --context "${KUBE_CONTEXT}" apply -f "${MANIFEST_DIR}/test-pod.yaml"
-	echo "Waiting for pod completion..."
-	kubectl --context "${KUBE_CONTEXT}" wait --for=condition=Completed pod/ghostwire-init-test -n ghostwire-test --timeout=180s
-	kubectl --context "${KUBE_CONTEXT}" logs -n ghostwire-test ghostwire-init-test
+	echo "Waiting for init container to complete..."
+	kubectl --context "${KUBE_CONTEXT}" wait --for=condition=Initialized pod/ghostwire-init-test -n ghostwire-test --timeout=180s
+	echo "Waiting for debug container readiness..."
+	kubectl --context "${KUBE_CONTEXT}" wait --for=condition=Ready pod/ghostwire-init-test -n ghostwire-test --timeout=180s
+	echo "Init container logs:"
+	kubectl --context "${KUBE_CONTEXT}" logs -n ghostwire-test ghostwire-init-test -c ghostwire-init
+	echo
+	echo "Debug container ready for inspection. Example:"
+	echo "  kubectl --context ${KUBE_CONTEXT} exec -n ghostwire-test ghostwire-init-test -c debug -- sh"
 fi
 
 echo "Deployment complete. Validate outputs with:"

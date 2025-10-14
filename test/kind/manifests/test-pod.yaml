@@ -8,11 +8,10 @@ metadata:
     component: init
 spec:
   serviceAccountName: ghostwire-init
-  restartPolicy: Never
   securityContext:
     runAsNonRoot: false
     supplementalGroups: []
-  containers:
+  initContainers:
     - name: ghostwire-init
       image: ghostwire:local # Build and load via ./test/kind/load-image.sh
       imagePullPolicy: IfNotPresent
@@ -27,7 +26,17 @@ spec:
         - name: GW_IPTABLES_DNAT_MAP
           value: /shared/dnat.map
       securityContext:
-        privileged: false
+        capabilities:
+          add: ["NET_ADMIN"]
+      volumeMounts:
+        - name: shared
+          mountPath: /shared
+  containers:
+    - name: debug
+      image: busybox:1.36
+      imagePullPolicy: IfNotPresent
+      command: ["sh", "-c", "sleep 3600"]
+      securityContext:
         capabilities:
           add: ["NET_ADMIN"]
       volumeMounts:
@@ -37,5 +46,5 @@ spec:
     - name: shared
       emptyDir: {}
 # After running the pod:
-#   kubectl logs -n ghostwire-test ghostwire-init-test
-#   kubectl exec -n ghostwire-test ghostwire-init-test -- cat /shared/dnat.map
+#   kubectl logs -n ghostwire-test ghostwire-init-test -c ghostwire-init
+#   kubectl exec -n ghostwire-test ghostwire-init-test -c debug -- cat /shared/dnat.map

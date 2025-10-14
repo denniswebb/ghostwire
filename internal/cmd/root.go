@@ -45,9 +45,14 @@ func Execute() error {
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "Path to configuration file")
 	rootCmd.PersistentFlags().String("log-level", "info", "Log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().String("iptables-dnat-map", "/shared/dnat.map", "Path to write the DNAT map artefact")
 
 	if err := viper.BindPFlag("log-level", rootCmd.PersistentFlags().Lookup("log-level")); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to bind log-level flag: %v\n", err)
+		os.Exit(1)
+	}
+	if err := viper.BindPFlag("iptables-dnat-map", rootCmd.PersistentFlags().Lookup("iptables-dnat-map")); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to bind iptables-dnat-map flag: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -59,6 +64,7 @@ func init() {
 	viper.SetDefault("exclude-cidrs", "169.254.169.254/32,10.96.0.10/32")
 	viper.SetDefault("ipv6", false)
 	viper.SetDefault("jump-hook", "OUTPUT")
+	viper.SetDefault("iptables-dnat-map", "/shared/dnat.map")
 
 	rootCmd.AddCommand(InitCmd)
 	rootCmd.AddCommand(WatcherCmd)

@@ -7,7 +7,7 @@ require_binary() {
 	if ! command -v "$1" >/dev/null 2>&1; then
 		echo "error: required command '$1' not found in PATH" >&2
 		exit 1
-	}
+	fi
 }
 
 cluster_exists() {

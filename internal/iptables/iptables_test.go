@@ -127,7 +127,7 @@ func TestAddDNATRulesIPFamilyHandling(t *testing.T) {
 		}
 
 		call := exec.calls[0]
-		wantArgs := []string{"-w", "5", "-t", table, "-A", chain, "-d", "10.0.0.1", "-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", "10.0.0.2:80"}
+		wantArgs := []string{"-w", iptablesWaitSeconds, "-t", table, "-A", chain, "-d", "10.0.0.1", "-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", "10.0.0.2:80"}
 		if call.command != ipv4Binary {
 			t.Fatalf("expected command %q, got %q", ipv4Binary, call.command)
 		}
@@ -162,7 +162,7 @@ func TestAddDNATRulesIPFamilyHandling(t *testing.T) {
 		}
 
 		call := exec.calls[0]
-		wantArgs := []string{"-w", "5", "-t", table, "-A", chain, "-d", "fd00::1", "-p", "tcp", "--dport", "443", "-j", "DNAT", "--to-destination", "fd00::2:443"}
+		wantArgs := []string{"-w", iptablesWaitSeconds, "-t", table, "-A", chain, "-d", "fd00::1", "-p", "tcp", "--dport", "443", "-j", "DNAT", "--to-destination", "fd00::2:443"}
 		if call.command != ipv6Binary {
 			t.Fatalf("expected command %q, got %q", ipv6Binary, call.command)
 		}
@@ -245,7 +245,7 @@ func TestEnsureChain(t *testing.T) {
 			t.Fatalf("expected 1 command, got %d", len(exec.calls))
 		}
 		call := exec.calls[0]
-		wantArgs := []string{"-w", "5", "-t", table, "-N", chain}
+		wantArgs := []string{"-w", iptablesWaitSeconds, "-t", table, "-N", chain}
 		if call.command != ipv4Binary || !equalSlices(call.args, wantArgs) {
 			t.Fatalf("unexpected command %+v", call)
 		}
@@ -264,7 +264,7 @@ func TestEnsureChain(t *testing.T) {
 			t.Fatalf("expected 1 command, got %d", len(exec.calls))
 		}
 		call := exec.calls[0]
-		wantArgs := []string{"-w", "5", "-t", table, "-F", chain}
+		wantArgs := []string{"-w", iptablesWaitSeconds, "-t", table, "-F", chain}
 		if call.command != ipv4Binary || !equalSlices(call.args, wantArgs) {
 			t.Fatalf("unexpected command %+v", call)
 		}
@@ -283,17 +283,18 @@ func TestEnsureChain(t *testing.T) {
 			t.Fatalf("expected 2 commands, got %d", len(exec.calls))
 		}
 		first := exec.calls[0]
-		if first.command != ipv4Binary || !equalSlices(first.args, []string{"-w", "5", "-t", table, "-N", chain}) {
+		if first.command != ipv4Binary || !equalSlices(first.args, []string{"-w", iptablesWaitSeconds, "-t", table, "-N", chain}) {
 			t.Fatalf("unexpected ipv4 command %+v", first)
 		}
 		second := exec.calls[1]
-		if second.command != ipv6Binary || !equalSlices(second.args, []string{"-w", "5", "-t", table, "-N", chain}) {
+		if second.command != ipv6Binary || !equalSlices(second.args, []string{"-w", iptablesWaitSeconds, "-t", table, "-N", chain}) {
 			t.Fatalf("unexpected ipv6 command %+v", second)
 		}
 	})
 
 	t.Run("ipv6 failures are logged but tolerated", func(t *testing.T) {
 		t.Parallel()
+		ResetIPv6ChainFailuresForTest()
 		exec := &recordingExecutor{chainExists: false, chainExists6Err: fmt.Errorf("boom")}
 		buf := &bytes.Buffer{}
 		logger := slog.New(slog.NewTextHandler(buf, nil))
@@ -304,6 +305,10 @@ func TestEnsureChain(t *testing.T) {
 
 		if !strings.Contains(buf.String(), "ip6tables chain preparation failed") {
 			t.Fatalf("expected warning about ipv6 failure, got %q", buf.String())
+		}
+
+		if got := IPv6ChainFailures(); got != 1 {
+			t.Fatalf("expected IPv6 failure counter to be 1, got %d", got)
 		}
 	})
 
@@ -359,7 +364,7 @@ func TestAddExclusionsScenarios(t *testing.T) {
 			t.Fatalf("expected 1 command for ipv4 exclusion, got %d", len(exec.calls))
 		}
 		call := exec.calls[0]
-		wantArgs := []string{"-w", "5", "-t", "nat", "-A", "CHAIN", "-d", "169.254.169.254/32", "-j", "RETURN"}
+		wantArgs := []string{"-w", iptablesWaitSeconds, "-t", "nat", "-A", "CHAIN", "-d", "169.254.169.254/32", "-j", "RETURN"}
 		if call.command != ipv4Binary || !equalSlices(call.args, wantArgs) {
 			t.Fatalf("unexpected command %+v", call)
 		}
@@ -448,6 +453,13 @@ func TestWriteDNATMap(t *testing.T) {
 			t.Fatalf("expected error for invalid path")
 		}
 	})
+
+	t.Run("path traversal rejected", func(t *testing.T) {
+		t.Parallel()
+		if err := WriteDNATMap("../dnat.map", nil, logger); err == nil {
+			t.Fatalf("expected error for traversal path")
+		}
+	})
 }
 
 func TestAddDNATRulesSCTP(t *testing.T) {
@@ -482,7 +494,7 @@ func TestAddDNATRulesSCTP(t *testing.T) {
 	}
 
 	call := exec.calls[0]
-	wantArgs := []string{"-w", "5", "-t", table, "-A", chain, "-d", "10.0.0.30", "-p", "sctp", "--dport", "5000", "-j", "DNAT", "--to-destination", "10.0.1.30:5000"}
+	wantArgs := []string{"-w", iptablesWaitSeconds, "-t", table, "-A", chain, "-d", "10.0.0.30", "-p", "sctp", "--dport", "5000", "-j", "DNAT", "--to-destination", "10.0.1.30:5000"}
 	if call.command != ipv4Binary || !equalSlices(call.args, wantArgs) {
 		t.Fatalf("unexpected command %+v", call)
 	}
@@ -583,9 +595,23 @@ func TestSetup(t *testing.T) {
 		}
 	})
 
-	t.Run("empty chain name errors", func(t *testing.T) {
-		if err := Setup(ctx, Config{ChainName: "   "}, nil, logger); err == nil {
-			t.Fatalf("expected error for empty chain name")
+	t.Run("empty chain name falls back to default", func(t *testing.T) {
+		exec := &recordingExecutor{}
+		restore := withExecutorFactory(exec)
+		t.Cleanup(restore)
+
+		if err := Setup(ctx, Config{ChainName: "   "}, nil, logger); err != nil {
+			t.Fatalf("expected default chain for empty name, got error: %v", err)
+		}
+
+		if len(exec.calls) == 0 {
+			t.Fatalf("expected at least one command to be issued")
+		}
+
+		call := exec.calls[0]
+		wantArgs := []string{"-w", iptablesWaitSeconds, "-t", "nat", "-N", defaultChainName}
+		if call.command != ipv4Binary || !equalSlices(call.args, wantArgs) {
+			t.Fatalf("unexpected command for default chain: %+v", call)
 		}
 	})
 
@@ -610,7 +636,7 @@ func TestSetup(t *testing.T) {
 	t.Run("exclusion error propagates", func(t *testing.T) {
 		exec := &recordingExecutor{
 			runErrors: map[string]error{
-				fmt.Sprintf("%s -w 5 -t %s -A %s -d %s -j RETURN", ipv4Binary, "nat", "CANARY_DNAT", "169.254.169.254/32"): fmt.Errorf("exclude failed"),
+				fmt.Sprintf("%s -w %s -t %s -A %s -d %s -j RETURN", ipv4Binary, iptablesWaitSeconds, "nat", "CANARY_DNAT", "169.254.169.254/32"): fmt.Errorf("exclude failed"),
 			},
 		}
 		restore := withExecutorFactory(exec)
@@ -629,7 +655,7 @@ func TestSetup(t *testing.T) {
 	t.Run("dnat rule error propagates", func(t *testing.T) {
 		exec := &recordingExecutor{
 			runErrors: map[string]error{
-				fmt.Sprintf("%s -w 5 -t %s -A %s -d %s -p %s --dport %d -j DNAT --to-destination %s:%d", ipv4Binary, "nat", "CANARY_DNAT", "10.0.0.10", "tcp", 80, "10.0.1.10", 80): fmt.Errorf("dnat failed"),
+				fmt.Sprintf("%s -w %s -t %s -A %s -d %s -p %s --dport %d -j DNAT --to-destination %s:%d", ipv4Binary, iptablesWaitSeconds, "nat", "CANARY_DNAT", "10.0.0.10", "tcp", 80, "10.0.1.10", 80): fmt.Errorf("dnat failed"),
 			},
 		}
 		restore := withExecutorFactory(exec)
@@ -689,7 +715,7 @@ func TestAddExclusions(t *testing.T) {
 		if ipv4Call.command != ipv4Binary {
 			t.Fatalf("expected ipv4 command %q, got %q", ipv4Binary, ipv4Call.command)
 		}
-		wantIPv4Args := []string{"-w", "5", "-t", table, "-A", chain, "-d", "10.0.0.0/24", "-j", "RETURN"}
+		wantIPv4Args := []string{"-w", iptablesWaitSeconds, "-t", table, "-A", chain, "-d", "10.0.0.0/24", "-j", "RETURN"}
 		if !equalSlices(ipv4Call.args, wantIPv4Args) {
 			t.Fatalf("expected ipv4 args %v, got %v", wantIPv4Args, ipv4Call.args)
 		}
@@ -697,7 +723,7 @@ func TestAddExclusions(t *testing.T) {
 		if ipv6Call.command != ipv6Binary {
 			t.Fatalf("expected ipv6 command %q, got %q", ipv6Binary, ipv6Call.command)
 		}
-		wantIPv6Args := []string{"-w", "5", "-t", table, "-A", chain, "-d", "fd00::/64", "-j", "RETURN"}
+		wantIPv6Args := []string{"-w", iptablesWaitSeconds, "-t", table, "-A", chain, "-d", "fd00::/64", "-j", "RETURN"}
 		if !equalSlices(ipv6Call.args, wantIPv6Args) {
 			t.Fatalf("expected ipv6 args %v, got %v", wantIPv6Args, ipv6Call.args)
 		}
@@ -718,20 +744,18 @@ func TestAddExclusions(t *testing.T) {
 			t.Fatalf("expected ipv4 command when ipv6 disabled, got %q", exec.calls[0].command)
 		}
 	})
-}
 
-func TestSetupRejectsEmptyChainName(t *testing.T) {
-	t.Parallel()
-
-	err := Setup(context.Background(), Config{
-		ChainName: " ",
-	}, nil, discardLogger())
-	if err == nil {
-		t.Fatal("expected error for empty chain name, got nil")
-	}
-	if !strings.Contains(err.Error(), "nat chain name cannot be empty") {
-		t.Fatalf("unexpected error message: %v", err)
-	}
+	t.Run("invalid cidr returns error", func(t *testing.T) {
+		t.Parallel()
+		exec := &recordingExecutor{}
+		err := AddExclusions(ctx, exec, table, chain, []string{"bad-cidr"}, false, logger)
+		if err == nil {
+			t.Fatalf("expected error for invalid cidr")
+		}
+		if len(exec.calls) != 0 {
+			t.Fatalf("expected no commands when cidr invalid, got %d", len(exec.calls))
+		}
+	})
 }
 
 func TestChainExistsAddsWaitFlag(t *testing.T) {

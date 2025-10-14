@@ -33,7 +33,7 @@ func AddDNATRules(ctx context.Context, executor Executor, table string, chain st
 		}
 
 		protocol := strings.ToLower(string(mapping.Protocol))
-		ruleArgs := []string{"-w", "5", "-t", table, "-A", chain, "-d", mapping.ActiveClusterIP, "-p", protocol, "--dport", fmt.Sprintf("%d", mapping.Port), "-j", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", mapping.PreviewClusterIP, mapping.Port)}
+		ruleArgs := []string{"-w", iptablesWaitSeconds, "-t", table, "-A", chain, "-d", mapping.ActiveClusterIP, "-p", protocol, "--dport", fmt.Sprintf("%d", mapping.Port), "-j", "DNAT", "--to-destination", fmt.Sprintf("%s:%d", mapping.PreviewClusterIP, mapping.Port)}
 
 		isActiveV6 := isIPv6(mapping.ActiveClusterIP)
 		isPreviewV6 := isIPv6(mapping.PreviewClusterIP)

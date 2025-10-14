@@ -5,31 +5,40 @@ CLUSTER_NAME="${KIND_CLUSTER_NAME:-ghostwire-test}"
 CHAIN_NAME="${GHOSTWIRE_CHAIN:-CANARY_DNAT}"
 KUBE_CONTEXT="kind-${CLUSTER_NAME}"
 NAMESPACE="ghostwire-test"
+POD_NAME="${GHOSTWIRE_INIT_POD:-ghostwire-init-test}"
 
 require_binary() {
 	if ! command -v "$1" >/dev/null 2>&1; then
 		echo "error: required command '$1' not found in PATH" >&2
 		exit 1
-	}
+	fi
 }
 
-require_binary kind
-require_binary docker
 require_binary kubectl
 
-NODE_NAME=$(kind get nodes --name "${CLUSTER_NAME}" 2>/dev/null | head -n1 || true)
-if [[ -z "${NODE_NAME}" ]]; then
-	echo "error: unable to determine kind node for cluster '${CLUSTER_NAME}'" >&2
+echo "Checking pod status..."
+PHASE=$(kubectl --context "${KUBE_CONTEXT}" get pod "${POD_NAME}" -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || true)
+if [[ -z "${PHASE}" ]]; then
+	echo "error: pod ${POD_NAME} not found in namespace ${NAMESPACE}" >&2
 	exit 1
 fi
 
-echo "Inspecting iptables rules on node ${NODE_NAME} (chain ${CHAIN_NAME})..."
-if ! docker exec "${NODE_NAME}" iptables -t nat -L "${CHAIN_NAME}" -n >/dev/null 2>&1; then
-	echo "error: chain ${CHAIN_NAME} not found. Ensure the init container completed successfully." >&2
+if [[ "${PHASE}" != "Running" ]]; then
+	echo "error: pod ${POD_NAME} is in phase '${PHASE}'. Ensure the debug container is running." >&2
 	exit 1
 fi
 
-RULES=$(docker exec "${NODE_NAME}" iptables -t nat -S "${CHAIN_NAME}")
+echo "Inspecting iptables rules in pod ${POD_NAME} (chain ${CHAIN_NAME})..."
+if ! kubectl --context "${KUBE_CONTEXT}" exec -n "${NAMESPACE}" "${POD_NAME}" -c debug -- iptables -t nat -L "${CHAIN_NAME}" -n >/dev/null 2>&1; then
+	echo "error: chain ${CHAIN_NAME} not found in pod namespace." >&2
+	exit 1
+fi
+
+if ! RULES=$(kubectl --context "${KUBE_CONTEXT}" exec -n "${NAMESPACE}" "${POD_NAME}" -c debug -- iptables -t nat -S "${CHAIN_NAME}" 2>/dev/null); then
+	echo "error: failed to read iptables rules" >&2
+	exit 1
+fi
+
 echo "iptables -t nat -S ${CHAIN_NAME} output:"
 echo "-----------------------------------------"
 echo "${RULES}"

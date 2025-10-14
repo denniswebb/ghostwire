@@ -4,12 +4,18 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/denniswebb/ghostwire/internal/discovery"
 )
 
 // WriteDNATMap records the resolved DNAT mappings to an audit file.
 func WriteDNATMap(path string, mappings []discovery.ServiceMapping, logger *slog.Logger) (err error) {
+	if err := validateDNATMapPath(path); err != nil {
+		return err
+	}
+
 	// #nosec G304 - path is provided by operator configuration and must be user-writable.
 	// 0644 so the watcher sidecar can read across containers.
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
@@ -36,5 +42,15 @@ func WriteDNATMap(path string, mappings []discovery.ServiceMapping, logger *slog
 	}
 
 	logger.Info("wrote dnat map", slog.String("path", path), slog.Int("mappings", len(mappings)))
+	return nil
+}
+
+func validateDNATMapPath(path string) error {
+	clean := filepath.Clean(path)
+	for _, part := range strings.Split(clean, string(filepath.Separator)) {
+		if part == ".." {
+			return fmt.Errorf("dnat map path %q contains unsupported traversal component", path)
+		}
+	}
 	return nil
 }

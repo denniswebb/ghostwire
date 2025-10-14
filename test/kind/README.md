@@ -46,7 +46,7 @@ Finish with `./test/kind/teardown-cluster.sh` to reclaim resources.
 | `load-image.sh` | Builds the ghostwire binary, packages it into a Docker image, and loads it into the KIND node. |
 | `deploy-test.sh` | Applies namespace/RBAC/service fixtures and optionally launches the init test pod. |
 | `validate-dnatmap.sh` | Copies `/shared/dnat.map` from the init pod and checks expected mappings. |
-| `validate-iptables.sh` | Executes `iptables -t nat -S CANARY_DNAT` inside the KIND node to verify DNAT rules. |
+| `validate-iptables.sh` | Executes `iptables -t nat -S CANARY_DNAT` inside the test pod's debug container to verify DNAT rules. |
 | `manifests/` | Kubernetes manifests used by the integration environment (namespace, services, RBAC, and test pod). |
 
 ## Manual Testing Procedure
@@ -75,13 +75,13 @@ Finish with `./test/kind/teardown-cluster.sh` to reclaim resources.
 5. **Inspect artefacts**
    ```sh
    kubectl --context kind-ghostwire-test exec -n ghostwire-test ghostwire-init-test -- cat /shared/dnat.map
-   docker exec ghostwire-test-control-plane iptables -t nat -L CANARY_DNAT -n -v
+   kubectl --context kind-ghostwire-test exec -n ghostwire-test ghostwire-init-test -c debug -- iptables -t nat -L CANARY_DNAT -n -v
    ```
 
 ## Validation Scripts
 
 - `validate-dnatmap.sh`: copies `/shared/dnat.map` from the init pod, prints its contents, and checks for expected entries (orders, payment, api-v2) while ensuring services without preview variants are absent.
-- `validate-iptables.sh`: retrieves active and preview cluster IPs via `kubectl`, then verifies that the KIND node's `CANARY_DNAT` chain contains matching DNAT rules and the metadata service exclusion.
+- `validate-iptables.sh`: retrieves active and preview cluster IPs via `kubectl`, then verifies that the init test pod's `CANARY_DNAT` chain contains matching DNAT rules and the metadata service exclusion from inside the debug container.
 
 Both scripts exit non-zero on failure so they can be chained into automated smoke tests.
 

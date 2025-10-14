@@ -11,7 +11,7 @@ require_binary() {
 	if ! command -v "$1" >/dev/null 2>&1; then
 		echo "error: required command '$1' not found in PATH" >&2
 		exit 1
-	}
+	fi
 }
 
 cluster_exists() {
@@ -53,7 +53,8 @@ chmod 0755 "${BUILD_DIR}/ghostwire"
 
 cat > "${BUILD_DIR}/Dockerfile" <<'EOF'
 FROM alpine:3.20
-RUN addgroup -S ghostwire && adduser -S ghostwire -G ghostwire
+RUN addgroup -S ghostwire && adduser -S ghostwire -G ghostwire \
+    && apk add --no-cache iptables
 COPY ghostwire /usr/local/bin/ghostwire
 USER ghostwire
 ENTRYPOINT ["/usr/local/bin/ghostwire"]

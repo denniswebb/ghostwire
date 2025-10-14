@@ -85,12 +85,37 @@ metadata:
 | `GW_PREVIEW_SUFFIX` | `-preview` | Preview suffix paired with `GW_ACTIVE_SUFFIX` matches |
 | `GW_DNS_SUFFIX` | `.svc.cluster.local` | Cluster DNS suffix |
 | `GW_NAT_CHAIN` | `CANARY_DNAT` | iptables chain name |
+| `GW_IPTABLES_DNAT_MAP` | `/shared/dnat.map` | Path where `ghostwire init` writes the DNAT map artefact |
 | `GW_JUMP_HOOK` | `OUTPUT` | `OUTPUT` or `PREROUTING` |
 | `GW_EXCLUDE_CIDRS` | IMDS, DNS | CSV of CIDRs to skip |
 | `GW_POLL_INTERVAL` | `2s` | Watcher poll cadence |
 | `GW_REFRESH_INTERVAL` | empty | If set, periodic rebuild of DNAT |
 | `GW_IPV6` | `false` | Add ip6tables rules |
 | `GW_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+
+---
+
+### NAT Chain Configuration Examples
+
+- **Custom chain name**: keep the watcher jump stable while testing alternate rule sets.
+  ```sh
+  export GW_NAT_CHAIN="CANARY_DNAT_V2"
+  ghostwire init
+  ```
+- **Additional exclusions**: skip corporate CIDRs alongside the built-in IMDS/DNS ranges.
+  ```sh
+  export GW_EXCLUDE_CIDRS="169.254.169.254/32,10.3.0.0/16"
+  ghostwire init
+  ```
+- **Dual-stack clusters**: enable ip6tables rules when preview/endpoints use IPv6 addresses.
+  ```sh
+  export GW_IPV6="true"
+  ghostwire init
+  ```
+
+> `ghostwire init` issues iptables commands with `-w 5`, telling the kernel to wait up to five seconds for xtables locks. Concurrent init pods will serialize on the kernel lock instead of racing each other; if contention persists past the timeout, the command fails and surfaces in logs.
+
+> Mount the `/shared` volume (where `GW_IPTABLES_DNAT_MAP` lives) with permissions that prevent peer containers from writing to the file. The default `emptyDir` mode is `0777`; tighten it to match your security posture if multiple containers share the volume.
 
 ---
 

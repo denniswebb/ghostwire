@@ -7,11 +7,3 @@ type Config struct {
 	IPv6         bool
 	DnatMapPath  string
 }
-
-// Rule represents a single iptables rule invocation.
-type Rule struct {
-	Table    string
-	Chain    string
-	RuleSpec []string
-	Comment  string
-}
