@@ -1,0 +1,63 @@
+name: Build Matrix
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+        go-version:
+          - "1.22"
+          - "1.23"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install toolchain with mise
+        uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+          version: 2024.10.0
+          tools: |
+            go@${{ matrix.go-version }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build
+        run: mise run build
+
+      - name: Verify binary (POSIX)
+        if: runner.os != 'Windows'
+        run: |
+          test -f ghostwire
+          test -x ghostwire
+
+      - name: Verify binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path ghostwire.exe)) {
+            Write-Error "ghostwire.exe not found after build"
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghostwire-${{ matrix.os }}-go${{ matrix.go-version }}
+          path: ghostwire*
+          retention-days: 7

@@ -1,0 +1,11 @@
+# Default runner image tuned for GitHub Actions parity
+-P ubuntu-latest=catthehacker/ubuntu:act-22.04
+
+# Force amd64 containers (especially useful on Apple Silicon hosts)
+--container-architecture linux/amd64
+
+# Enable local artifact storage for upload-artifact@v4
+--artifact-server-path .artifacts
+
+# Cache actions locally to avoid repeated downloads
+--action-offline-mode

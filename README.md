@@ -6,16 +6,31 @@ Invisible in-cluster traffic switcher for Blue/Green & Canary rollouts.
 
 ## Why
 - Preview pods automatically talk to preview backends.
+- Fully automatic service discovery—no service lists to maintain when teams add new workloads.
 - If a preview isn’t present, traffic falls back to active.
 - No restarts during promotions; Argo Rollouts flips labels, `ghostwire` flips routing.
 - All the knobs you’ll ask for later are here now.
 
 ## Components
-- **`init`**: discovers Service IPs and builds an iptables NAT chain mapping “active IP:port → preview IP:port” for services where a real preview exists.
+- **`init`**: automatically discovers all Services in the namespace via the Kubernetes API, identifies base/preview pairs (e.g., `orders` + `orders-preview`), and prepares DNAT mappings for all ports. No explicit service list needed. (Note: iptables rule building will be added in a subsequent phase.)
 - **`watcher`**: polls its own Pod labels and toggles a single jump into that chain when the pod’s role becomes preview.
 - **`injector`**: mutating admission webhook that injects the init and watcher based on annotations. Optional, but saves your wrists.
 
 Language: **Go**. Single static binaries. Tiny images. Fewer surprises.
+
+---
+
+## Development
+
+Install [mise](https://mise.jdx.dev) to manage the toolchain defined in `.mise.toml`, then run `mise install` to pull Go 1.24.9 into your environment. Common workflows run through `mise run`: `build` produces the `ghostwire` binary, `test` runs `go test ./...`, `fmt` formats sources, `vet` performs static analysis, `lint` executes `golangci-lint` when it is on your PATH, and `clean` removes local build artifacts. `mise run help` lists every available task.
+
+**Continuous Integration:** All code changes are validated by GitHub Actions (see `.github/workflows/`). The CI pipeline runs formatting checks, static analysis, race-enabled tests with coverage, linting via `golangci-lint`, and cross-platform builds to ensure the CLI stays portable.
+
+**Local Testing:** Use [`act`](https://github.com/nektos/act) to exercise workflows before pushing. Install with `brew install act` on macOS (see upstream docs for other platforms), then run `act pull_request` for the full pipeline or target specific jobs such as `act -j test`. Defaults live in `.actrc`, including artifact storage under `.artifacts/`.
+
+**Pre-commit Checklist:** Before opening a PR, run `mise run fmt`, `mise run vet`, `mise run test`, and optionally `act pull_request` to catch CI failures early.
+
+**Multi-Architecture Support:** Container images are built for `linux/amd64` and `linux/arm64`, providing coverage for Intel/AMD servers, AWS Graviton nodes, and Apple Silicon-based Kubernetes clusters.
 
 ---
 
@@ -36,11 +51,9 @@ Add these to a `Deployment`, `StatefulSet`, or `Rollout` to enable:
 metadata:
   annotations:
     ghostwire.dev/enabled: "true"                    # enable injection
-    ghostwire.dev/services: "orders:443,users:8080"  # name:port[,name:port...]
     ghostwire.dev/roleLabelKey: "role"               # label key to read on Pod
     ghostwire.dev/roleActive: "active"               # value that disables jump
     ghostwire.dev/rolePreview: "preview"             # value that enables jump
-    ghostwire.dev/svcActivePattern: "{{name}}-active"
     ghostwire.dev/svcPreviewPattern: "{{name}}-preview"
     ghostwire.dev/namespace: "prod"                  # default: Pod namespace
     ghostwire.dev/dnsSuffix: ".svc.cluster.local"    # override if you like pain
@@ -61,13 +74,13 @@ metadata:
 
 | Var | Default | What it does |
 |---|---|---|
-| `GW_NAMESPACE` | Pod namespace | Namespace for service discovery |
-| `GW_SERVICES` | required | Comma list `name:port` |
+| `GW_NAMESPACE` | Pod namespace | Namespace for service discovery (falls back to `POD_NAMESPACE` or `default`) |
 | `GW_ROLE_LABEL_KEY` | `role` | Pod label key to read |
 | `GW_ROLE_ACTIVE` | `active` | “Active” value |
 | `GW_ROLE_PREVIEW` | `preview` | “Preview” value |
-| `GW_SVC_ACTIVE_PATTERN` | `{{name}}-active` | Go-template service name |
-| `GW_SVC_PREVIEW_PATTERN` | `{{name}}-preview` | Go-template service name |
+| `GW_SVC_PREVIEW_PATTERN` | `{{name}}-preview` | Go-template preview service name |
+| `GW_ACTIVE_SUFFIX` | `-active` | Suffix used to detect active services when pairing |
+| `GW_PREVIEW_SUFFIX` | `-preview` | Preview suffix paired with `GW_ACTIVE_SUFFIX` matches |
 | `GW_DNS_SUFFIX` | `.svc.cluster.local` | Cluster DNS suffix |
 | `GW_NAT_CHAIN` | `CANARY_DNAT` | iptables chain name |
 | `GW_JUMP_HOOK` | `OUTPUT` | `OUTPUT` or `PREROUTING` |
@@ -98,7 +111,6 @@ Workload annotated for injection:
 metadata:
   annotations:
     ghostwire.dev/enabled: "true"
-    ghostwire.dev/services: "orders:443,ledger:443"
 ```
 
 That’s it. No app changes. No service mesh hand-holding.
@@ -109,6 +121,7 @@ That’s it. No app changes. No service mesh hand-holding.
 - Pods need `NET_ADMIN` to program iptables. Yes, that’s spicy. Scope the ServiceAccount per workload and bind only `get` on its own Pod:
   - Role: `resources: ["pods"], verbs: ["get"]`
   - Optionally template `resourceNames: ["$(POD_NAME)"]`
+- Init container needs RBAC permissions to list Services in its namespace (`resources: ["services"], verbs: ["list"]`).
 - Injector runs with minimal RBAC, mutating only annotated workloads.
 - Exclude CIDRs for IMDS, DNS, or anything else you shouldn’t mangle.
 
@@ -150,8 +163,6 @@ initContainers:
   securityContext:
     capabilities: { add: ["NET_ADMIN"] }
   env:
-  - { name: GW_SERVICES, value: "orders:443,users:8080" }
-  - { name: GW_SVC_ACTIVE_PATTERN, value: "{{name}}-active" }
   - { name: GW_SVC_PREVIEW_PATTERN, value: "{{name}}-preview" }
   volumeMounts:
   - { name: shared, mountPath: /shared }

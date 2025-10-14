@@ -1,0 +1,34 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - errcheck
+    - gofmt
+    - goimports
+    - gosimple
+    - govet
+    - ineffassign
+    - misspell
+    - revive
+    - staticcheck
+    - typecheck
+    - unused
+    - gosec
+    - gocritic
+
+linters-settings:
+  gosec:
+    excludes:
+      - G204 # Subprocess launched with variable; acceptable for controlled commands
+  misspell:
+    locale: US
+  revive:
+    severity: warning
+    rules:
+      - name: blank-imports
+      - name: if-return
+
+issues:
+  exclude-use-default: false

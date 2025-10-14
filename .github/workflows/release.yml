@@ -1,0 +1,59 @@
+# Placeholder: expand with GoReleaser or multi-platform build matrix in later phase
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install toolchain with mise
+        uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+          version: 2024.10.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run test suite
+        run: mise run test
+
+      - name: Build cross-platform binaries
+        run: |
+          mkdir -p dist
+          targets=(
+            "linux:amd64"
+            "linux:arm64"
+            "darwin:amd64"
+            "darwin:arm64"
+            "windows:amd64"
+          )
+          for target in "${targets[@]}"; do
+            IFS=":" read -r GOOS GOARCH <<<"$target"
+            export GOOS GOARCH
+            output="ghostwire-${GOOS}-${GOARCH}"
+            if [[ "$GOOS" == "windows" ]]; then
+              output="${output}.exe"
+            fi
+            go build -o "dist/${output}" ./cmd/ghostwire
+          done
+        env:
+          CGO_ENABLED: 0
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
