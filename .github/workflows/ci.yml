@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -31,7 +31,7 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Install toolchain with mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@v3
         with:
           install: true
           cache: true
@@ -62,7 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -75,7 +75,7 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Ensure Go toolchain with mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@v3
         with:
           install: true
           cache: true
