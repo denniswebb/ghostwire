@@ -5,7 +5,7 @@
 ## Project Snapshot
 - **Language & Tooling:** Go 1.24 managed via `mise` (`.mise.toml` is canonical).
 - **Binary:** Single CLI at `cmd/ghostwire/main.go` with cobra-driven subcommands.
-- **Core packages:** `internal/cmd` (CLI), `internal/logging` (slog handler), `internal/config` (viper bindings), `internal/discovery` (Kubernetes service auto-discovery and ClusterIP extraction); `pkg/` reserved for public utilities.
+- **Core packages:** `internal/cmd` (CLI), `internal/logging` (slog handler), `internal/config` (viper bindings), `internal/discovery` (Kubernetes service auto-discovery and ClusterIP extraction), `internal/iptables` (iptables/ip6tables command wrapper, DNAT chain and rule management); `pkg/` reserved for public utilities.
 - **Logging:** Go `log/slog` JSON handler decorated for Datadog (`service`, `status`, `dd.trace_id`, `dd.span_id` placeholders).
 - **Configuration:** `spf13/viper` sourcing env vars (`GW_*`), flags, and optional config file.
 
@@ -56,6 +56,7 @@
 - Favor table-driven tests for behavior-heavy code and keep fixtures small and explicit.
 - Propagate `context.Context` through future long-running operations to support cancellation.
 - Stick to structured logging; include relevant key/value pairs (`logger.Info("...", slog.String("component", "..."))`).
+- The iptables package uses an Executor interface for testability—production code uses RealExecutor (runs actual commands), tests inject a mock that records commands without executing them. All iptables operations are idempotent (init can be run multiple times safely).
 - Service discovery is fully automatic—the init container lists namespace services and matches base/preview pairs via pattern templates. Do not reintroduce explicit service lists.
 - Maintain ASCII-only source unless extending existing Unicode text.
 
@@ -71,6 +72,7 @@
 
 ## Security & Operational Notes
 - The runtime components eventually require `NET_ADMIN` capabilities; ensure docs and code continue to call that out.
+- The init container creates the DNAT chain and rules but does **not** add the jump rule—the watcher sidecar activates routing by adding `-j CANARY_DNAT` to OUTPUT (or PREROUTING) when the pod's role label becomes `preview`.
 - The init container must run with a ServiceAccount permitted to list Services in its namespace (`resources: ["services"], verbs: ["list"]`).
 - Respect user environment variables and configuration precedence: flags > config file > env vars > defaults.
 - Avoid storing secrets or credentials in the repo; use environment variables or dedicated secret managers.

@@ -4,12 +4,14 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
 	"github.com/denniswebb/ghostwire/internal/discovery"
+	"github.com/denniswebb/ghostwire/internal/iptables"
 	"github.com/denniswebb/ghostwire/internal/logging"
 )
 
@@ -75,7 +77,39 @@ var InitCmd = &cobra.Command{
 			slog.String("namespace", namespace),
 		)
 
-		// TODO(ghostwire/iptables): Build DNAT rules from discovered mappings.
+		chainName := viper.GetString("nat-chain")
+		excludeList := viper.GetString("exclude-cidrs")
+		ipv6Enabled := viper.GetBool("ipv6")
+
+		var excludeCIDRs []string
+		if excludeList != "" {
+			parts := strings.Split(excludeList, ",")
+			for _, part := range parts {
+				trimmed := strings.TrimSpace(part)
+				if trimmed != "" {
+					excludeCIDRs = append(excludeCIDRs, trimmed)
+				}
+			}
+		}
+
+		iptablesCfg := iptables.Config{
+			ChainName:    chainName,
+			ExcludeCIDRs: excludeCIDRs,
+			IPv6:         ipv6Enabled,
+			DnatMapPath:  "/shared/dnat.map",
+		}
+
+		if err := iptables.Setup(ctx, iptablesCfg, mappings, logger); err != nil {
+			logger.Error("iptables setup failed", slog.String("error", err.Error()))
+			return err
+		}
+
+		logger.Info(
+			"iptables chain prepared",
+			slog.String("chain", chainName),
+			slog.Int("dnat_rules", len(mappings)),
+		)
+
 		return nil
 	},
 }

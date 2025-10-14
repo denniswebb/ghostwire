@@ -55,6 +55,10 @@ func init() {
 	viper.SetDefault("svc-preview-pattern", "{{name}}-preview")
 	viper.SetDefault("active-suffix", "-active")
 	viper.SetDefault("preview-suffix", "-preview")
+	viper.SetDefault("nat-chain", "CANARY_DNAT")
+	viper.SetDefault("exclude-cidrs", "169.254.169.254/32,10.96.0.10/32")
+	viper.SetDefault("ipv6", false)
+	viper.SetDefault("jump-hook", "OUTPUT")
 
 	rootCmd.AddCommand(InitCmd)
 	rootCmd.AddCommand(WatcherCmd)

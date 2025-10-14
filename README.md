@@ -12,7 +12,7 @@ Invisible in-cluster traffic switcher for Blue/Green & Canary rollouts.
 - All the knobs you’ll ask for later are here now.
 
 ## Components
-- **`init`**: automatically discovers all Services in the namespace via the Kubernetes API, identifies base/preview pairs (e.g., `orders` + `orders-preview`), and prepares DNAT mappings for all ports. No explicit service list needed. (Note: iptables rule building will be added in a subsequent phase.)
+- **`init`**: automatically discovers all Services in the namespace via the Kubernetes API, identifies base/preview pairs (e.g., `orders` + `orders-preview`), creates a custom DNAT chain (default: `CANARY_DNAT`), adds exclusion rules for IMDS and DNS, builds DNAT rules mapping active ClusterIP:port → preview ClusterIP:port for all discovered services, and writes `/shared/dnat.map` for audit. Does **not** activate routing—that's the watcher’s job.
 - **`watcher`**: polls its own Pod labels and toggles a single jump into that chain when the pod’s role becomes preview.
 - **`injector`**: mutating admission webhook that injects the init and watcher based on annotations. Optional, but saves your wrists.
 
@@ -138,9 +138,7 @@ That’s it. No app changes. No service mesh hand-holding.
 ## Injector Behavior (what actually gets added)
 
 - An **initContainer** that:
-  - Resolves `<svcActive>` and `<svcPreview>` FQDNs and builds DNAT rules only when the preview ClusterIP is distinct.
-  - Writes a small `/shared/dnat.map` for audit/debug.
-  - Exits without enabling the chain.
+  - Discovers services, builds DNAT rules with exclusions, writes `/shared/dnat.map` for audit/debug, and exits without enabling the chain (watcher activates it).
 - A **watcher sidecar** that:
   - Polls the Pod’s `role` label.
   - Adds or removes a single `-j CANARY_DNAT` jump in `OUTPUT` (or `PREROUTING`) accordingly.
