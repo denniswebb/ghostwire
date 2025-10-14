@@ -3,7 +3,6 @@ experimental = true
 
 [tools]
 go = "1.24.9"
-"go:github.com/golangci/golangci-lint/cmd/golangci-lint" = "v2.5.0"
 
 [tasks.build]
 description = "Compile the ghostwire binary"

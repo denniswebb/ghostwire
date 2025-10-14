@@ -255,9 +255,14 @@ func TestChainExistsAddsWaitFlag(t *testing.T) {
 	tempDir := t.TempDir()
 	logPath := filepath.Join(tempDir, "iptables_args.txt")
 
+	scriptPath := filepath.Join(tempDir, "iptables")
 	scriptContent := fmt.Sprintf("#!/bin/sh\nprintf '%%s' \"$*\" > %s\nexit 1\n", logPath)
-	if err := os.WriteFile(filepath.Join(tempDir, "iptables"), []byte(scriptContent), 0o755); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0o600); err != nil {
 		t.Fatalf("failed to write stub iptables: %v", err)
+	}
+	// #nosec G302 - executable permissions are required so the stub can run in this test.
+	if err := os.Chmod(scriptPath, 0o700); err != nil {
+		t.Fatalf("failed to chmod stub iptables: %v", err)
 	}
 
 	originalPath := os.Getenv("PATH")
@@ -276,6 +281,7 @@ func TestChainExistsAddsWaitFlag(t *testing.T) {
 		t.Fatal("expected chain to be absent")
 	}
 
+	// #nosec G304 - logPath is generated within the test temp directory.
 	data, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("failed to read args log: %v", err)
