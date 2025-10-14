@@ -2,10 +2,8 @@ package iptables
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
-	"os/exec"
 )
 
 const (
@@ -52,18 +50,9 @@ func ensureIPv6Chain(ctx context.Context, executor Executor, table string, chain
 		return err
 	}
 
-	exists := true
-	if err := executor.Run(ctx, ipv6Binary, "-w", "5", "-t", table, "-L", chain); err != nil {
-		exists = false
-		var cmdErr *CommandError
-		if errors.As(err, &cmdErr) {
-			var exitErr *exec.ExitError
-			if errors.As(cmdErr.Err, &exitErr) && exitErr.ExitCode() != 1 {
-				return err
-			}
-		} else {
-			return err
-		}
+	exists, err := executor.ChainExists6(ctx, table, chain)
+	if err != nil {
+		return fmt.Errorf("determine ipv6 chain existence: %w", err)
 	}
 
 	if exists {

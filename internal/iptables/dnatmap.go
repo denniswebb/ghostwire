@@ -11,7 +11,8 @@ import (
 // WriteDNATMap records the resolved DNAT mappings to an audit file.
 func WriteDNATMap(path string, mappings []discovery.ServiceMapping, logger *slog.Logger) (err error) {
 	// #nosec G304 - path is provided by operator configuration and must be user-writable.
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	// 0644 so the watcher sidecar can read across containers.
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return fmt.Errorf("open dnat map %s: %w", path, err)
 	}

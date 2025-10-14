@@ -33,7 +33,8 @@ func Setup(ctx context.Context, cfg Config, mappings []discovery.ServiceMapping,
 		return fmt.Errorf("add exclusions: %w", err)
 	}
 
-	if err := AddDNATRules(ctx, executor, "nat", cfg.ChainName, mappings, cfg.IPv6, logger); err != nil {
+	addedDNATRules, err := AddDNATRules(ctx, executor, "nat", cfg.ChainName, mappings, cfg.IPv6, logger)
+	if err != nil {
 		return fmt.Errorf("add dnat rules: %w", err)
 	}
 
@@ -54,7 +55,7 @@ func Setup(ctx context.Context, cfg Config, mappings []discovery.ServiceMapping,
 		"dnat chain configured but NOT activated - watcher will add jump rule when role=preview",
 		slog.String("chain_name", cfg.ChainName),
 		slog.Int("exclusions", exclusionCount),
-		slog.Int("dnat_rules", len(mappings)),
+		slog.Int("dnat_rules", addedDNATRules),
 		slog.Bool("ipv6_enabled", cfg.IPv6),
 		slog.String("dnat_map_path", cfg.DnatMapPath),
 	)

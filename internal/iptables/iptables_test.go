@@ -36,6 +36,10 @@ func (r *recordingExecutor) ChainExists(context.Context, string, string) (bool, 
 	return false, nil
 }
 
+func (r *recordingExecutor) ChainExists6(context.Context, string, string) (bool, error) {
+	return false, nil
+}
+
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
@@ -85,8 +89,12 @@ func TestAddDNATRulesIPFamilyHandling(t *testing.T) {
 			},
 		}
 
-		if err := AddDNATRules(ctx, exec, table, chain, mappings, false, logger); err != nil {
+		added, err := AddDNATRules(ctx, exec, table, chain, mappings, false, logger)
+		if err != nil {
 			t.Fatalf("AddDNATRules returned error: %v", err)
+		}
+		if added != 1 {
+			t.Fatalf("expected 1 rule added, got %d", added)
 		}
 
 		if len(exec.calls) != 1 {
@@ -116,8 +124,12 @@ func TestAddDNATRulesIPFamilyHandling(t *testing.T) {
 			},
 		}
 
-		if err := AddDNATRules(ctx, exec, table, chain, mappings, true, logger); err != nil {
+		added, err := AddDNATRules(ctx, exec, table, chain, mappings, true, logger)
+		if err != nil {
 			t.Fatalf("AddDNATRules returned error: %v", err)
+		}
+		if added != 1 {
+			t.Fatalf("expected 1 rule added, got %d", added)
 		}
 
 		if len(exec.calls) != 1 {
@@ -147,8 +159,12 @@ func TestAddDNATRulesIPFamilyHandling(t *testing.T) {
 			},
 		}
 
-		if err := AddDNATRules(ctx, exec, table, chain, mappings, true, logger); err != nil {
+		added, err := AddDNATRules(ctx, exec, table, chain, mappings, true, logger)
+		if err != nil {
 			t.Fatalf("AddDNATRules returned error: %v", err)
+		}
+		if added != 0 {
+			t.Fatalf("expected 0 rules added due to skip, got %d", added)
 		}
 
 		if len(exec.calls) != 0 {
@@ -169,8 +185,12 @@ func TestAddDNATRulesIPFamilyHandling(t *testing.T) {
 			},
 		}
 
-		if err := AddDNATRules(ctx, exec, table, chain, mappings, false, logger); err != nil {
+		added, err := AddDNATRules(ctx, exec, table, chain, mappings, false, logger)
+		if err != nil {
 			t.Fatalf("AddDNATRules returned error: %v", err)
+		}
+		if added != 0 {
+			t.Fatalf("expected 0 rules added when ipv6 disabled, got %d", added)
 		}
 
 		if len(exec.calls) != 0 {

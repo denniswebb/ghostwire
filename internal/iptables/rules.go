@@ -16,10 +16,20 @@ func isIPv6(ip string) bool {
 }
 
 // AddDNATRules builds DNAT rules for each discovered service mapping.
-func AddDNATRules(ctx context.Context, executor Executor, table string, chain string, mappings []discovery.ServiceMapping, ipv6 bool, logger *slog.Logger) error {
+func AddDNATRules(ctx context.Context, executor Executor, table string, chain string, mappings []discovery.ServiceMapping, ipv6 bool, logger *slog.Logger) (int, error) {
+	added := 0
 	for _, mapping := range mappings {
 		if err := ctx.Err(); err != nil {
-			return err
+			return added, err
+		}
+
+		if mapping.ActiveClusterIP == "" || mapping.PreviewClusterIP == "" || mapping.Port == 0 {
+			logger.Warn("skipping dnat rule due to missing IP/port",
+				slog.String("service", mapping.ServiceName),
+				slog.String("active_ip", mapping.ActiveClusterIP),
+				slog.String("preview_ip", mapping.PreviewClusterIP),
+				slog.Int("port", int(mapping.Port)))
+			continue
 		}
 
 		protocol := strings.ToLower(string(mapping.Protocol))
@@ -45,9 +55,10 @@ func AddDNATRules(ctx context.Context, executor Executor, table string, chain st
 
 		logger.Info("adding dnat rule", slog.String("service", mapping.ServiceName), slog.Int("port", int(mapping.Port)), slog.String("protocol", protocol), slog.String("active_ip", mapping.ActiveClusterIP), slog.String("preview_ip", mapping.PreviewClusterIP), slog.Bool("ipv6", useIPv6))
 		if err := executor.Run(ctx, bin, ruleArgs...); err != nil {
-			return fmt.Errorf("add dnat rule for %s: %w", mapping.ServiceName, err)
+			return added, fmt.Errorf("add dnat rule for %s: %w", mapping.ServiceName, err)
 		}
+		added++
 	}
 
-	return nil
+	return added, nil
 }
