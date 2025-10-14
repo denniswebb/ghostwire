@@ -406,6 +406,7 @@ func TestWriteDNATMap(t *testing.T) {
 			t.Fatalf("WriteDNATMap returned error: %v", err)
 		}
 
+		// #nosec G304 -- temp dir path is fully controlled by test, no external input.
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("ReadFile: %v", err)
@@ -434,6 +435,7 @@ func TestWriteDNATMap(t *testing.T) {
 			t.Fatalf("WriteDNATMap returned error: %v", err)
 		}
 
+		// #nosec G304 -- temp dir path is fully controlled by test, no external input.
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("ReadFile: %v", err)
@@ -554,6 +556,7 @@ func TestSetup(t *testing.T) {
 			t.Fatalf("expected 4 commands, got %d", len(exec.calls))
 		}
 
+		// #nosec G304 -- temp dir path is fully controlled by test, no external input.
 		data, err := os.ReadFile(mapPath)
 		if err != nil {
 			t.Fatalf("ReadFile: %v", err)

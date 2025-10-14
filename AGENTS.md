@@ -5,7 +5,7 @@
 ## Project Snapshot
 - **Language & Tooling:** Go 1.24 managed via `mise` (`.mise.toml` is canonical).
 - **Binary:** Single CLI at `cmd/ghostwire/main.go` with cobra-driven subcommands.
-- **Core packages:** `internal/cmd` (CLI), `internal/logging` (slog handler), `internal/config` (viper bindings), `internal/discovery` (Kubernetes service auto-discovery and ClusterIP extraction), `internal/iptables` (iptables/ip6tables command wrapper, DNAT chain and rule management); `pkg/` reserved for public utilities.
+- **Core packages:** `internal/cmd` (CLI), `internal/logging` (slog handler), `internal/config` (viper bindings), `internal/discovery` (Kubernetes service auto-discovery and ClusterIP extraction), `internal/iptables` (iptables/ip6tables command wrapper, DNAT chain and rule management), `internal/k8s` (Kubernetes client setup, pod label reading, polling orchestration); `pkg/` reserved for public utilities.
 - **Logging:** Go `log/slog` JSON handler decorated for Datadog (`service`, `status`, `dd.trace_id`, `dd.span_id` placeholders).
 - **Configuration:** `spf13/viper` sourcing env vars (`GW_*`), flags, and optional config file.
 
@@ -59,6 +59,7 @@
 - The iptables package uses an Executor interface for testability—production code uses RealExecutor (runs actual commands), tests inject a mock that records commands without executing them. All iptables operations are idempotent (init can be run multiple times safely).
 - Service discovery is fully automatic—the init container lists namespace services and matches base/preview pairs via pattern templates. Do not reintroduce explicit service lists.
 - Maintain ASCII-only source unless extending existing Unicode text.
+- The watcher runs as a long-lived sidecar that polls pod labels at a configurable interval (default 2s), reacts to role transitions (active ↔ preview) with Info logs, and keeps running through transient API errors until its context is cancelled.
 
 ## Testing & Validation Strategy
 - Add unit tests when evolving command behavior, configuration parsing, or logging utilities.
@@ -76,6 +77,7 @@ Unit tests follow table-driven patterns with `t.Parallel()` for concurrency. The
 - The runtime components eventually require `NET_ADMIN` capabilities; ensure docs and code continue to call that out.
 - The init container creates the DNAT chain and rules but does **not** add the jump rule—the watcher sidecar activates routing by adding `-j CANARY_DNAT` to OUTPUT (or PREROUTING) when the pod's role label becomes `preview`.
 - The init container must run with a ServiceAccount permitted to list Services in its namespace (`resources: ["services"], verbs: ["list"]`).
+- The watcher sidecar requires RBAC permissions to get its own Pod in the namespace. The ServiceAccount must have a Role with `resources: ["pods"], verbs: ["get"]` bound to it. For tighter security, use `resourceNames: ["$(POD_NAME)"]` to restrict access to only the watcher's own pod.
 - Respect user environment variables and configuration precedence: flags > config file > env vars > defaults.
 - Avoid storing secrets or credentials in the repo; use environment variables or dedicated secret managers.
 

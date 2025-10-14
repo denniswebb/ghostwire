@@ -139,20 +139,11 @@ func withClusterIPs(ips ...string) func(*corev1.Service) {
 	}
 }
 
-func withoutClusterIP() func(*corev1.Service) {
-	return func(svc *corev1.Service) {
-		svc.Spec.ClusterIP = ""
-		svc.Spec.ClusterIPs = nil
-	}
-}
-
 func makeServiceList(services ...corev1.Service) *corev1.ServiceList {
 	list := &corev1.ServiceList{
 		Items: make([]corev1.Service, len(services)),
 	}
-	for i := range services {
-		list.Items[i] = services[i]
-	}
+	copy(list.Items, services)
 	return list
 }
 

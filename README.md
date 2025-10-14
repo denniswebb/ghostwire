@@ -13,7 +13,7 @@ Invisible in-cluster traffic switcher for Blue/Green & Canary rollouts.
 
 ## Components
 - **`init`**: automatically discovers all Services in the namespace via the Kubernetes API, identifies base/preview pairs (e.g., `orders` + `orders-preview`), creates a custom DNAT chain (default: `CANARY_DNAT`), adds exclusion rules for IMDS and DNS, builds DNAT rules mapping active ClusterIP:port → preview ClusterIP:port for all discovered services, and writes `/shared/dnat.map` for audit. Does **not** activate routing—that's the watcher’s job.
-- **`watcher`**: polls its own Pod labels and toggles a single jump into that chain when the pod’s role becomes preview.
+- **`watcher`**: long-running sidecar that polls its own Pod's labels at a configurable interval (default 2s), detects role transitions between active and preview states, and logs state changes. Handles graceful shutdown via SIGTERM/SIGINT. (Note: iptables jump management and health/metrics endpoints will be added in the subsequent phase.)
 - **`injector`**: mutating admission webhook that injects the init and watcher based on annotations. Optional, but saves your wrists.
 
 Language: **Go**. Single static binaries. Tiny images. Fewer surprises.
@@ -148,6 +148,7 @@ That’s it. No app changes. No service mesh hand-holding.
 - Pods need `NET_ADMIN` to program iptables. Yes, that’s spicy. Scope the ServiceAccount per workload and bind only `get` on its own Pod:
   - Role: `resources: ["pods"], verbs: ["get"]`
   - Optionally template `resourceNames: ["$(POD_NAME)"]`
+- Watcher sidecar needs RBAC permissions: `resources: ["pods"], verbs: ["get"]` to read its own pod labels. For enhanced security, scope the Role with `resourceNames: ["$(POD_NAME)"]` to restrict access to only the watcher's pod.
 - Init container needs RBAC permissions to list Services in its namespace (`resources: ["services"], verbs: ["list"]`).
 - Injector runs with minimal RBAC, mutating only annotated workloads.
 - Exclude CIDRs for IMDS, DNS, or anything else you shouldn’t mangle.

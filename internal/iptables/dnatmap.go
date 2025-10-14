@@ -16,8 +16,7 @@ func WriteDNATMap(path string, mappings []discovery.ServiceMapping, logger *slog
 		return err
 	}
 
-	// #nosec G304 - path is provided by operator configuration and must be user-writable.
-	// 0644 so the watcher sidecar can read across containers.
+	// #nosec G302,G304 -- DNAT map lives on an operator-configured shared volume; validateDNATMapPath ensures safe path traversal.
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return fmt.Errorf("open dnat map %s: %w", path, err)
