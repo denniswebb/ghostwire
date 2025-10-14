@@ -4,8 +4,17 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"strings"
 )
+
+func isCIDRv6(c string) bool {
+	ip, _, err := net.ParseCIDR(c)
+	if err != nil {
+		return false
+	}
+	return ip != nil && ip.To4() == nil
+}
 
 // AddExclusions injects RETURN rules for CIDRs that should bypass DNAT handling.
 func AddExclusions(ctx context.Context, executor Executor, table string, chain string, cidrs []string, ipv6 bool, logger *slog.Logger) error {
@@ -19,10 +28,10 @@ func AddExclusions(ctx context.Context, executor Executor, table string, chain s
 			continue
 		}
 
-		isIPv6 := strings.Contains(cidr, ":")
+		isIPv6 := isCIDRv6(cidr)
 		if !isIPv6 {
 			logger.Info("adding exclusion", slog.String("cidr", cidr), slog.String("table", table), slog.String("chain", chain), slog.Bool("ipv6", false))
-			if err := executor.Run(ctx, ipv4Binary, "-t", table, "-A", chain, "-d", cidr, "-j", "RETURN"); err != nil {
+			if err := executor.Run(ctx, ipv4Binary, "-w", "5", "-t", table, "-A", chain, "-d", cidr, "-j", "RETURN"); err != nil {
 				return fmt.Errorf("add exclusion for %s: %w", cidr, err)
 			}
 			continue
@@ -34,7 +43,7 @@ func AddExclusions(ctx context.Context, executor Executor, table string, chain s
 		}
 
 		logger.Info("adding exclusion", slog.String("cidr", cidr), slog.String("table", table), slog.String("chain", chain), slog.Bool("ipv6", true))
-		if err := executor.Run(ctx, ipv6Binary, "-t", table, "-A", chain, "-d", cidr, "-j", "RETURN"); err != nil {
+		if err := executor.Run(ctx, ipv6Binary, "-w", "5", "-t", table, "-A", chain, "-d", cidr, "-j", "RETURN"); err != nil {
 			return fmt.Errorf("add ipv6 exclusion for %s: %w", cidr, err)
 		}
 	}

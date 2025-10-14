@@ -21,6 +21,10 @@ func Setup(ctx context.Context, cfg Config, mappings []discovery.ServiceMapping,
 
 	executor := NewExecutor()
 
+	if strings.TrimSpace(cfg.ChainName) == "" {
+		return fmt.Errorf("nat chain name cannot be empty; set GW_NAT_CHAIN or use default CANARY_DNAT")
+	}
+
 	if err := EnsureChain(ctx, executor, "nat", cfg.ChainName, cfg.IPv6, logger); err != nil {
 		return fmt.Errorf("prepare chain %s: %w", cfg.ChainName, err)
 	}

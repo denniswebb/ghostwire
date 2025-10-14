@@ -78,6 +78,9 @@ var InitCmd = &cobra.Command{
 		)
 
 		chainName := viper.GetString("nat-chain")
+		if strings.TrimSpace(chainName) == "" {
+			chainName = "CANARY_DNAT"
+		}
 		excludeList := viper.GetString("exclude-cidrs")
 		ipv6Enabled := viper.GetBool("ipv6")
 

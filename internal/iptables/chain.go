@@ -26,12 +26,12 @@ func EnsureChain(ctx context.Context, executor Executor, table string, chain str
 
 	if exists {
 		logger.Info("flushing existing chain", slog.String("table", table), slog.String("chain", chain), slog.Bool("ipv6", false))
-		if err := executor.Run(ctx, ipv4Binary, "-t", table, "-F", chain); err != nil {
+		if err := executor.Run(ctx, ipv4Binary, "-w", "5", "-t", table, "-F", chain); err != nil {
 			return fmt.Errorf("flush chain %s: %w", chain, err)
 		}
 	} else {
 		logger.Info("creating chain", slog.String("table", table), slog.String("chain", chain), slog.Bool("ipv6", false))
-		if err := executor.Run(ctx, ipv4Binary, "-t", table, "-N", chain); err != nil {
+		if err := executor.Run(ctx, ipv4Binary, "-w", "5", "-t", table, "-N", chain); err != nil {
 			return fmt.Errorf("create chain %s: %w", chain, err)
 		}
 	}
@@ -53,7 +53,7 @@ func ensureIPv6Chain(ctx context.Context, executor Executor, table string, chain
 	}
 
 	exists := true
-	if err := executor.Run(ctx, ipv6Binary, "-t", table, "-L", chain); err != nil {
+	if err := executor.Run(ctx, ipv6Binary, "-w", "5", "-t", table, "-L", chain); err != nil {
 		exists = false
 		var cmdErr *CommandError
 		if errors.As(err, &cmdErr) {
@@ -68,14 +68,14 @@ func ensureIPv6Chain(ctx context.Context, executor Executor, table string, chain
 
 	if exists {
 		logger.Info("flushing existing chain", slog.String("table", table), slog.String("chain", chain), slog.Bool("ipv6", true))
-		if err := executor.Run(ctx, ipv6Binary, "-t", table, "-F", chain); err != nil {
+		if err := executor.Run(ctx, ipv6Binary, "-w", "5", "-t", table, "-F", chain); err != nil {
 			return err
 		}
 		return nil
 	}
 
 	logger.Info("creating chain", slog.String("table", table), slog.String("chain", chain), slog.Bool("ipv6", true))
-	if err := executor.Run(ctx, ipv6Binary, "-t", table, "-N", chain); err != nil {
+	if err := executor.Run(ctx, ipv6Binary, "-w", "5", "-t", table, "-N", chain); err != nil {
 		return err
 	}
 

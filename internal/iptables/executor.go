@@ -61,7 +61,7 @@ func (r *RealExecutor) Run(ctx context.Context, command string, args ...string) 
 
 // ChainExists determines whether the requested chain is present in the specified table.
 func (r *RealExecutor) ChainExists(ctx context.Context, table string, chain string) (bool, error) {
-	cmd := exec.CommandContext(ctx, "iptables", "-t", table, "-L", chain)
+	cmd := exec.CommandContext(ctx, "iptables", "-w", "5", "-t", table, "-L", chain)
 	output, err := cmd.CombinedOutput()
 	if err == nil {
 		return true, nil
@@ -74,7 +74,7 @@ func (r *RealExecutor) ChainExists(ctx context.Context, table string, chain stri
 		}
 		return false, &CommandError{
 			Command: "iptables",
-			Args:    []string{"-t", table, "-L", chain},
+			Args:    []string{"-w", "5", "-t", table, "-L", chain},
 			Output:  string(output),
 			Err:     err,
 		}

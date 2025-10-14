@@ -36,17 +36,11 @@ jobs:
           targets=(
             "linux:amd64"
             "linux:arm64"
-            "darwin:amd64"
-            "darwin:arm64"
-            "windows:amd64"
           )
           for target in "${targets[@]}"; do
             IFS=":" read -r GOOS GOARCH <<<"$target"
             export GOOS GOARCH
             output="ghostwire-${GOOS}-${GOARCH}"
-            if [[ "$GOOS" == "windows" ]]; then
-              output="${output}.exe"
-            fi
             go build -o "dist/${output}" ./cmd/ghostwire
           done
         env:
