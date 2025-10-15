@@ -13,14 +13,20 @@ type LabelReader interface {
 	GetLabel(ctx context.Context, labelKey string) (string, error)
 }
 
+// TransitionHandler reacts to recognized role transitions detected by the poller.
+type TransitionHandler interface {
+	OnTransition(ctx context.Context, previous string, current string) error
+}
+
 // PollerConfig holds the dependencies and settings for the Poller.
 type PollerConfig struct {
-	LabelReader  LabelReader
-	LabelKey     string
-	ActiveValue  string
-	PreviewValue string
-	PollInterval time.Duration
-	Logger       *slog.Logger
+	LabelReader       LabelReader
+	LabelKey          string
+	ActiveValue       string
+	PreviewValue      string
+	PollInterval      time.Duration
+	Logger            *slog.Logger
+	TransitionHandler TransitionHandler
 }
 
 // Poller periodically checks a pod label and records role transitions.
@@ -110,49 +116,71 @@ func (p *Poller) pollOnce(ctx context.Context) {
 	}
 
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	previousValue := p.lastRole
-	currentRecognized := p.isRecognizedRole(labelValue)
 	previousRecognized := p.isRecognizedRole(previousValue)
+	currentRecognized := p.isRecognizedRole(labelValue)
+	firstObservation := !p.observedRole
+	stateUnchanged := false
+	recognizedTransition := false
 
-	if !p.observedRole {
+	if firstObservation {
 		p.lastRole = labelValue
 		p.observedRole = true
+	} else if previousValue == labelValue {
+		stateUnchanged = true
+	} else {
+		p.lastRole = labelValue
+		recognizedTransition = previousRecognized && currentRecognized
+	}
+	p.mu.Unlock()
+
+	if firstObservation {
 		p.logger.Debug("initialized role state",
 			slog.String("current_role", labelValue),
 			slog.String("label_key", p.cfg.LabelKey),
 			slog.Bool("recognized_role", currentRecognized),
 		)
+		if currentRecognized && p.cfg.TransitionHandler != nil {
+			if err := p.cfg.TransitionHandler.OnTransition(ctx, "", labelValue); err != nil {
+				p.logger.Warn("initial transition handler failed",
+					slog.String("current_role", labelValue),
+					slog.Any("error", err),
+				)
+			}
+		}
 		return
 	}
 
-	if previousValue == labelValue {
+	switch {
+	case stateUnchanged:
 		p.logger.Debug("role state unchanged",
 			slog.String("current_role", labelValue),
 			slog.String("label_key", p.cfg.LabelKey),
 		)
-		return
-	}
-
-	p.lastRole = labelValue
-
-	if previousRecognized && currentRecognized {
+	case recognizedTransition:
 		p.logger.Info("role transition detected",
 			slog.String("previous_role", previousValue),
 			slog.String("current_role", labelValue),
 			slog.String("label_key", p.cfg.LabelKey),
 		)
-		return
+		if handler := p.cfg.TransitionHandler; handler != nil {
+			if err := handler.OnTransition(ctx, previousValue, labelValue); err != nil {
+				p.logger.Warn("transition handler failed",
+					slog.String("previous_role", previousValue),
+					slog.String("current_role", labelValue),
+					slog.Any("error", err),
+				)
+			}
+		}
+	default:
+		p.logger.Debug("role changed without recognized transition",
+			slog.String("previous_role", previousValue),
+			slog.Bool("previous_recognized", previousRecognized),
+			slog.String("current_role", labelValue),
+			slog.Bool("current_recognized", currentRecognized),
+			slog.String("label_key", p.cfg.LabelKey),
+		)
 	}
-
-	p.logger.Debug("role changed without recognized transition",
-		slog.String("previous_role", previousValue),
-		slog.Bool("previous_recognized", previousRecognized),
-		slog.String("current_role", labelValue),
-		slog.Bool("current_recognized", currentRecognized),
-		slog.String("label_key", p.cfg.LabelKey),
-	)
 }
 
 func (p *Poller) isRecognizedRole(role string) bool {

@@ -13,7 +13,7 @@ Invisible in-cluster traffic switcher for Blue/Green & Canary rollouts.
 
 ## Components
 - **`init`**: automatically discovers all Services in the namespace via the Kubernetes API, identifies base/preview pairs (e.g., `orders` + `orders-preview`), creates a custom DNAT chain (default: `CANARY_DNAT`), adds exclusion rules for IMDS and DNS, builds DNAT rules mapping active ClusterIP:port → preview ClusterIP:port for all discovered services, and writes `/shared/dnat.map` for audit. Does **not** activate routing—that's the watcher’s job.
-- **`watcher`**: long-running sidecar that polls its own Pod's labels at a configurable interval (default 2s), detects role transitions between active and preview states, and logs state changes. Handles graceful shutdown via SIGTERM/SIGINT. (Note: iptables jump management and health/metrics endpoints will be added in the subsequent phase.)
+- **`watcher`**: long-running sidecar that polls its own Pod's labels at a configurable interval (default 2s), detects role transitions between active and preview states, inserts a `-j CANARY_DNAT` jump at the top of the configured hook (OUTPUT or PREROUTING) when role=`preview`, removes the jump when role=`active`, exposes `/healthz` and `/metrics` on `:8081`, and handles graceful shutdown via SIGTERM/SIGINT.
 - **`injector`**: mutating admission webhook that injects the init and watcher based on annotations. Optional, but saves your wrists.
 
 Language: **Go**. Single static binaries. Tiny images. Fewer surprises.
@@ -216,11 +216,13 @@ containers:
 ---
 
 ## Metrics and Observability
-- `/metrics` Prometheus endpoint with counters:
-  - `ghostwire_dnat_rules{service}` current rules
-  - `ghostwire_jump_state{state}` 0/1
-  - `ghostwire_errors_total{type}`
-- `/healthz` returns 200 when the watcher has read labels and verified chain presence.
+- `/metrics` on `:8081` exposes Prometheus data:
+  - `ghostwire_jump_active` (gauge) — 1 when the DNAT jump is active, 0 otherwise.
+  - `ghostwire_errors_total{type="label_read"|"iptables"|"chain_verify"}` (counter) — accumulated error counts by category.
+  - `ghostwire_dnat_rules` (gauge) — number of DNAT mappings discovered from `/shared/dnat.map`.
+  - `ghostwire_jump_active` intentionally remains a single gauge instead of a `jump_state{state="preview"|"active"}` vector to keep label cardinality bounded; dashboards should treat `1` as preview-active and `0` as the default active path.
+  - `ghostwire_dnat_rules` reports the total rule count rather than per-service values for the same cardinality reason. If you need per-service numbers, scrape and aggregate the `/shared/dnat.map` contents externally.
+- `/healthz` on `:8081` returns 200 once the watcher has verified the DNAT chain and successfully read its pod labels at least once; otherwise it returns 503.
 
 ---
 
