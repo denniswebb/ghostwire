@@ -33,6 +33,10 @@ Install the following tools before running the scripts:
 # 5. Validate generated artefacts
 ./test/kind/validate-dnatmap.sh
 ./test/kind/validate-iptables.sh
+
+# 6. (Optional) Deploy and exercise the watcher sidecar (see Watcher Testing below)
+./test/kind/deploy-watcher-test.sh
+./test/kind/test-watcher-transitions.sh
 ```
 
 Finish with `./test/kind/teardown-cluster.sh` to reclaim resources.
@@ -45,9 +49,13 @@ Finish with `./test/kind/teardown-cluster.sh` to reclaim resources.
 | `setup-cluster.sh` / `teardown-cluster.sh` | Scripts to create and delete the cluster. |
 | `load-image.sh` | Builds the ghostwire binary, packages it into a Docker image, and loads it into the KIND node. |
 | `deploy-test.sh` | Applies namespace/RBAC/service fixtures and optionally launches the init test pod. |
+| `deploy-watcher-test.sh` | Applies watcher RBAC and launches the watcher test pod. |
 | `validate-dnatmap.sh` | Copies `/shared/dnat.map` from the init pod and checks expected mappings. |
 | `validate-iptables.sh` | Executes `iptables -t nat -S CANARY_DNAT` inside the test pod's debug container to verify DNAT rules. |
+| `test-watcher-transitions.sh` | Automates watcher label transitions, metrics checks, and iptables validation. |
 | `manifests/` | Kubernetes manifests used by the integration environment (namespace, services, RBAC, and test pod). |
+| `manifests/watcher-rbac.yaml` | ServiceAccount, Role, and RoleBinding granting the watcher pod access to its labels. |
+| `manifests/watcher-test-pod.yaml` | Pod manifest with init + watcher containers and shared volume for DNAT maps. |
 
 ## Manual Testing Procedure
 
@@ -82,6 +90,7 @@ Finish with `./test/kind/teardown-cluster.sh` to reclaim resources.
 
 - `validate-dnatmap.sh`: copies `/shared/dnat.map` from the init pod, prints its contents, and checks for expected entries (orders, payment, api-v2) while ensuring services without preview variants are absent.
 - `validate-iptables.sh`: retrieves active and preview cluster IPs via `kubectl`, then verifies that the init test pod's `CANARY_DNAT` chain contains matching DNAT rules and the metadata service exclusion from inside the debug container.
+- `test-watcher-transitions.sh`: changes the watcher pod's role label, confirms jump rule activation/removal, and inspects `/metrics` and `/healthz` outputs (detailed in the Watcher Testing section below).
 
 Both scripts exit non-zero on failure so they can be chained into automated smoke tests.
 
@@ -105,6 +114,74 @@ api-v2:9090/TCP ...
 - `-A CANARY_DNAT -d 169.254.169.254/32 -j RETURN` (IMDS exclusion).
 - One DNAT rule per mapping listed above.
 
+## Watcher Testing
+
+### Overview
+
+The watcher sidecar polls the pod's `role` label, toggles the `CANARY_DNAT` jump rule, and exposes `/metrics` and `/healthz` on `:8081`. These tests build on the init workflow: the init container primed the DNAT map and verified service discovery; the watcher validates ongoing routing control using the same fixtures.
+
+### Prerequisites
+
+- Complete the **Quick Start** steps above, including `deploy-test.sh --with-pod`, so the DNAT map exists on the shared volume.
+- Load the `ghostwire:local` image into KIND via `./test/kind/load-image.sh` (required for both init and watcher containers).
+- Ensure the cluster is running (`kind get clusters`) and the `ghostwire-test` namespace exists.
+
+### Quick Start
+
+```sh
+# Deploy watcher RBAC + pod
+./test/kind/deploy-watcher-test.sh
+
+# Run automated transition checks
+./test/kind/test-watcher-transitions.sh
+
+# Follow logs while experimenting manually
+kubectl --context kind-ghostwire-test logs -n ghostwire-test ghostwire-watcher-test -c ghostwire-watcher -f
+```
+
+### Manual Testing Procedure
+
+1. Deploy RBAC and the watcher pod: `./test/kind/deploy-watcher-test.sh`.
+2. Confirm the pod is running and initially labelled `role=active`: `kubectl get pod ghostwire-watcher-test -n ghostwire-test --show-labels`.
+3. Verify the jump rule is absent in active mode: `kubectl exec ... -- iptables -t nat -L OUTPUT -n -v` (no `CANARY_DNAT` entry).
+4. Switch to preview mode: `kubectl label pod ghostwire-watcher-test -n ghostwire-test role=preview --overwrite` and wait a few seconds.
+5. Check logs for `activating dnat jump` and confirm the jump rule now exists at position 1 in `OUTPUT`.
+6. Inspect observability endpoints:
+   ```sh
+   kubectl exec ... -- wget -qO- http://localhost:8081/healthz
+   kubectl exec ... -- wget -qO- http://localhost:8081/metrics | grep ghostwire_jump_active
+   ```
+7. Revert to active mode with `kubectl label ... role=active --overwrite` and verify the jump rule is removed and logs show `deactivating dnat jump`.
+
+### Expected Results
+
+- **Logs:** transitions log at `INFO` level (`activating dnat jump`, `deactivating dnat jump`) while unmatched values log at `DEBUG`.
+- **iptables:** `iptables -t nat -S OUTPUT` contains `-I OUTPUT 1 -j CANARY_DNAT` only when `role=preview`.
+- **Metrics (sample):**
+
+  ```
+  # HELP ghostwire_jump_active Whether the DNAT jump rule is active (1) or inactive (0).
+  # TYPE ghostwire_jump_active gauge
+  ghostwire_jump_active 0
+  # HELP ghostwire_errors_total Total number of watcher errors by type.
+  # TYPE ghostwire_errors_total counter
+  # HELP ghostwire_dnat_rules Number of DNAT rules discovered from the audit map.
+  # TYPE ghostwire_dnat_rules gauge
+  ghostwire_dnat_rules <count derived from /shared/dnat.map>
+  ```
+- **Health:** `/healthz` returns `200 OK` with body `OK` once the chain has been verified and labels have been read at least once.
+
+### Troubleshooting
+
+- **Watcher pod stays Pending:** confirm `deploy-test.sh --with-pod` was run so the shared volume and DNAT map exist, and ensure `deploy-watcher-test.sh` applied the ServiceAccount/Role.
+- **Health check returns 503:** the watcher has not yet verified the DNAT chain (`SetChainVerified`) or read labels (`SetLabelsRead`); inspect logs for warnings and ensure the init container completed successfully.
+- **Jump rule not added:** verify the pod has `NET_ADMIN` capability, confirm label changes took effect (`kubectl get pod ... --show-labels`), and review watcher logs for iptables errors.
+- **Metrics missing or empty:** use `kubectl exec` to curl `/metrics`; if the endpoint is unreachable, ensure port 8081 is exposed and the pod is running.
+
+### Validation Scripts
+
+`./test/kind/test-watcher-transitions.sh` automates the manual flow: it resets the label to `active`, toggles to `preview`, validates jump rule insertion/removal, scrapes `/metrics` for expected gauges/counters, and checks `/healthz`. The script exits non-zero on the first failure so it can be chained into CI smoke runs. Re-run `./test/kind/deploy-watcher-test.sh` if the pod has been deleted between runs.
+
 ## Troubleshooting
 
 - **`kind: command not found`** – Install KIND and ensure Docker Desktop is running.
@@ -123,4 +200,4 @@ rm -f ghostwire
 
 ## Next Steps
 
-This harness covers the init container path. Future work will extend it to exercise the watcher sidecar, ensuring the `CANARY_DNAT` chain is activated when preview mode is enabled.
+With both the init container and watcher sidecar validated in KIND, the next iteration can focus on scripting these flows into `act` jobs or GitHub Actions smoke tests, and exploring IPv6 toggle scenarios for clusters that enable dual-stack networking.

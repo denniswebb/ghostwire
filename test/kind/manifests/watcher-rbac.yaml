@@ -1,0 +1,32 @@
+# RBAC resources for the watcher sidecar to read its own pod labels.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ghostwire-watcher
+  namespace: ghostwire-test
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ghostwire-pod-reader
+  namespace: ghostwire-test
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+    # Optionally restrict to the watcher pod name:
+    # resourceNames: ["ghostwire-watcher-test"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ghostwire-watcher-binding
+  namespace: ghostwire-test
+subjects:
+  - kind: ServiceAccount
+    name: ghostwire-watcher
+    namespace: ghostwire-test
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ghostwire-pod-reader

@@ -1,0 +1,104 @@
+# Pod manifest for validating the watcher sidecar. Deploy alongside the init test.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ghostwire-watcher-test
+  namespace: ghostwire-test
+  labels:
+    app: ghostwire
+    component: watcher
+    role: active # Initial state; change to preview to trigger the jump rule.
+spec:
+  serviceAccountName: ghostwire-watcher
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: false
+  initContainers:
+    - name: ghostwire-init
+      image: ghostwire:local # Build and load via ./test/kind/load-image.sh
+      imagePullPolicy: IfNotPresent
+      command: ["ghostwire", "init"]
+      env:
+        - name: GW_NAMESPACE
+          value: ghostwire-test
+        - name: GW_SVC_PREVIEW_PATTERN
+          value: "{{name}}-preview"
+        - name: GW_LOG_LEVEL
+          value: debug
+        - name: GW_IPTABLES_DNAT_MAP
+          value: /shared/dnat.map
+      securityContext:
+        capabilities:
+          add: ["NET_ADMIN"]
+      volumeMounts:
+        - name: shared
+          mountPath: /shared
+  containers:
+    - name: workload
+      image: busybox:1.36
+      imagePullPolicy: IfNotPresent
+      command: ["sh", "-c", "sleep 3600"]
+      securityContext:
+        capabilities:
+          add: ["NET_ADMIN"]
+      volumeMounts:
+        - name: shared
+          mountPath: /shared
+    - name: ghostwire-watcher
+      image: ghostwire:local
+      imagePullPolicy: IfNotPresent
+      command: ["ghostwire", "watcher"]
+      env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: GW_ROLE_LABEL_KEY
+          value: role
+        - name: GW_ROLE_ACTIVE
+          value: active
+        - name: GW_ROLE_PREVIEW
+          value: preview
+        - name: GW_POLL_INTERVAL
+          value: 2s
+        - name: GW_LOG_LEVEL
+          value: debug
+        - name: GW_NAT_CHAIN
+          value: CANARY_DNAT
+        - name: GW_JUMP_HOOK
+          value: OUTPUT
+        - name: GW_IPTABLES_DNAT_MAP
+          value: /shared/dnat.map
+      ports:
+        - name: metrics
+          containerPort: 8081
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: metrics
+        periodSeconds: 5
+      readinessProbe:
+        httpGet:
+          path: /healthz
+          port: metrics
+        periodSeconds: 5
+      securityContext:
+        capabilities:
+          add: ["NET_ADMIN"]
+      volumeMounts:
+        - name: shared
+          mountPath: /shared
+  volumes:
+    - name: shared
+      emptyDir: {}
+# Usage notes:
+#   kubectl apply -f test/kind/manifests/watcher-test-pod.yaml
+#   kubectl label pod ghostwire-watcher-test -n ghostwire-test role=preview --overwrite
+#   kubectl logs -n ghostwire-test ghostwire-watcher-test -c ghostwire-watcher -f
+#   kubectl exec -n ghostwire-test ghostwire-watcher-test -c ghostwire-watcher -- iptables -t nat -L OUTPUT -n -v | grep CANARY_DNAT
+#   kubectl exec -n ghostwire-test ghostwire-watcher-test -c ghostwire-watcher -- wget -qO- http://localhost:8081/metrics
+#   kubectl exec -n ghostwire-test ghostwire-watcher-test -c ghostwire-watcher -- wget -qO- http://localhost:8081/healthz
